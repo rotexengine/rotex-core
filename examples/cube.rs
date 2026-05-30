@@ -1,5 +1,5 @@
 use rotex_core::{
-    DeviceDescriptor, Extent2D, FrameDescriptor, FrontendEngine, IndexFormat, InstanceDescriptor,
+    DeviceDescriptor, Extent2D, FrameDescriptor, GraphicsContext, IndexFormat, InstanceDescriptor,
     MaterialDescriptor, MaterialId, MeshDescriptor, MeshId, MeshInstanceDescriptor, PassDescriptor,
     ResourceBatchCreate, ResourceBatchUpdate, ResourceCreateDescriptor, ResourceHandle, TextureDescriptor,
     TextureFormat, TextureId,
@@ -30,7 +30,7 @@ struct ColoredVertex {
 #[derive(Default)]
 struct App {
     window: Option<Window>,
-    engine: Option<FrontendEngine>,
+    engine: Option<GraphicsContext>,
     scene: Option<SceneDescriptor>,
     frame: Option<FrameDescriptor>,
     mesh_id: Option<MeshId>,
@@ -42,7 +42,7 @@ struct App {
 
 impl App {
     #[cfg(target_arch = "wasm32")]
-    fn with_engine(engine: FrontendEngine) -> Self {
+    fn with_engine(engine: GraphicsContext) -> Self {
         Self {
             engine: Some(engine),
             ..Default::default()
@@ -110,7 +110,7 @@ impl ApplicationHandler for App {
                 .map(|extension| unsafe { std::ffi::CStr::from_ptr(*extension) })
                 .map(|extension| extension.to_string_lossy().into_owned())
                 .collect();
-            match pollster::block_on(FrontendEngine::new(desc, DeviceDescriptor::default())) {
+            match pollster::block_on(GraphicsContext::new(desc, DeviceDescriptor::default())) {
                 Ok(engine) => self.engine = Some(engine),
                 Err(err) => {
                     eprintln!("cube engine initialization failed: {err}");
@@ -301,7 +301,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
     spawn_local(async move {
-        match FrontendEngine::new(InstanceDescriptor::default(), DeviceDescriptor::default()).await {
+        match GraphicsContext::new(InstanceDescriptor::default(), DeviceDescriptor::default()).await {
             Ok(engine) => event_loop.spawn_app(App::with_engine(engine)),
             Err(err) => eprintln!("cube engine initialization failed: {err}"),
         }

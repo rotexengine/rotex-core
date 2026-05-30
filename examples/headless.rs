@@ -1,9 +1,9 @@
-use rotex_core::{DeviceDescriptor, FrontendEngine, InstanceDescriptor};
+use rotex_core::{DeviceDescriptor, GraphicsContext, InstanceDescriptor};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut device_descriptor = DeviceDescriptor::default();
     device_descriptor.enable_swapchain = false;
-    let engine = pollster::block_on(FrontendEngine::new(
+    let engine = pollster::block_on(GraphicsContext::new(
         InstanceDescriptor::default(),
         device_descriptor,
     ))?;

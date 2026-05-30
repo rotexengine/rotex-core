@@ -1,5 +1,5 @@
 use rotex_core::{
-    DeviceDescriptor, Extent2D, FrontendEngine, InstanceDescriptor, SurfaceDescriptor,
+    DeviceDescriptor, Extent2D, GraphicsContext, InstanceDescriptor, SurfaceDescriptor,
 };
 use winit::{
     application::ApplicationHandler,
@@ -13,7 +13,7 @@ use winit::{
 #[derive(Default)]
 struct App {
     window: Option<Window>,
-    engine: Option<FrontendEngine>,
+    engine: Option<GraphicsContext>,
 }
 
 fn window_extent(window: &Window) -> Extent2D {
@@ -49,7 +49,7 @@ impl ApplicationHandler for App {
             .collect();
         }
         let mut engine =
-            pollster::block_on(FrontendEngine::new(instance_descriptor, DeviceDescriptor::default()))
+            pollster::block_on(GraphicsContext::new(instance_descriptor, DeviceDescriptor::default()))
                 .expect("frontend engine");
         engine
             .attach_surface(SurfaceDescriptor {

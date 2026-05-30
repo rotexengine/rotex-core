@@ -1,6 +1,6 @@
-mod engine;
+mod graphics_context;
 
-pub use engine::FrontendEngine;
+pub use graphics_context::GraphicsContext;
 pub use rotex_types::{
     CameraDescriptor, CreatedResources, DeviceDescriptor, DeviceFeatures, Extent2D, FrameDescriptor,
     IndexFormat, InstanceDescriptor, MaterialDescriptor, MaterialId, MeshDescriptor, MeshId,

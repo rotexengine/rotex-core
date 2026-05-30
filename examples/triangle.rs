@@ -1,5 +1,5 @@
 use rotex_core::{
-    DeviceDescriptor, Extent2D, FrontendEngine, FrameDescriptor, IndexFormat, InstanceDescriptor,
+    DeviceDescriptor, Extent2D, GraphicsContext, FrameDescriptor, IndexFormat, InstanceDescriptor,
     MaterialDescriptor, MaterialId, MeshDescriptor, MeshId, MeshInstanceDescriptor, PassDescriptor,
     ResourceBatchCreate, ResourceCreateDescriptor, ResourceHandle, SceneDescriptor, SurfaceDescriptor,
     VertexAttribute, VertexBufferLayout, VertexFormat,
@@ -16,7 +16,7 @@ use winit::{
 #[derive(Default)]
 struct App {
     window: Option<Window>,
-    engine: Option<FrontendEngine>,
+    engine: Option<GraphicsContext>,
     scene: Option<SceneDescriptor>,
     frame: Option<FrameDescriptor>,
 }
@@ -61,7 +61,7 @@ impl ApplicationHandler for App {
             .collect();
         }
         let mut engine =
-            pollster::block_on(FrontendEngine::new(instance_descriptor, DeviceDescriptor::default()))
+            pollster::block_on(GraphicsContext::new(instance_descriptor, DeviceDescriptor::default()))
         .expect("triangle engine");
         engine
             .attach_surface(SurfaceDescriptor {

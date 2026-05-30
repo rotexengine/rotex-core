@@ -1,3 +1,5 @@
+// rotex_core/src/renderer.rs (Formerly engine.rs)
+
 use crate::error::Error;
 use crate::bridge::BackendBridge;
 use rotex_types::{
@@ -5,11 +7,11 @@ use rotex_types::{
     ResourceBatchUpdate, SceneDescriptor, SurfaceDescriptor,
 };
 
-pub struct FrontendEngine {
+pub struct GraphicsContext {
     backend: BackendBridge,
 }
 
-impl FrontendEngine {
+impl GraphicsContext {
     pub async fn new(
         instance_descriptor: InstanceDescriptor,
         device_descriptor: DeviceDescriptor,
