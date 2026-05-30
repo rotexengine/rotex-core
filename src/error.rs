@@ -1,4 +1,3 @@
-use ash::vk;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9,17 +8,14 @@ pub enum Severity {
 
 #[derive(Error, Debug)]
 pub enum ErrorKind {
-    #[error("Vulkan API error: {0:?}")]
-    Vulkan(vk::Result),
-
-    #[error("Missing Vulkan Layer")]
-    MissingLayer(String),
-
     #[error("No compatible physical device found")]
     NoCompatibleDevice,
 
-    #[error("Failed to load Vulkan library")]
-    Loading(#[from] ash::LoadingError),
+    #[error("Unsupported operation: {0}")]
+    Unsupported(&'static str),
+
+    #[error("Backend error: {0}")]
+    Backend(String),
 }
 
 #[derive(Debug)]
@@ -30,16 +26,7 @@ pub struct Error {
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.kind {
-            ErrorKind::Vulkan(err) => write!(
-                f,
-                "[{:?}] Vulkan API error: {:?} (code {})",
-                self.severity,
-                err,
-                err.as_raw()
-            ),
-            other => write!(f, "[{:?}] {}", self.severity, other),
-        }
+        write!(f, "[{:?}] {}", self.severity, self.kind)
     }
 }
 
@@ -50,13 +37,6 @@ impl std::error::Error for Error {
 }
 
 impl Error {
-    pub fn vk_result_code(&self) -> Option<i32> {
-        match &self.kind {
-            ErrorKind::Vulkan(err) => Some(err.as_raw()),
-            _ => None,
-        }
-    }
-
     pub fn fatal(kind: ErrorKind) -> Self {
         Self {
             kind,
@@ -72,18 +52,41 @@ impl Error {
     }
 }
 
-pub fn vk_error(err: vk::Result) -> Error {
-    let severity = if matches!(
-        err,
-        vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::SUBOPTIMAL_KHR
-    ) {
-        Severity::Warning
-    } else {
-        Severity::Fatal
-    };
-
-    Error {
-        kind: ErrorKind::Vulkan(err),
-        severity,
+#[cfg(not(target_arch = "wasm32"))]
+impl From<rotex_vulkan::Error> for Error {
+    fn from(value: rotex_vulkan::Error) -> Self {
+        let severity = match value.severity {
+            rotex_vulkan::Severity::Fatal => Severity::Fatal,
+            rotex_vulkan::Severity::Info
+            | rotex_vulkan::Severity::Warning
+            | rotex_vulkan::Severity::Recoverable => Severity::Warning,
+        };
+        let kind = match value.kind {
+            rotex_vulkan::ErrorKind::NoCompatibleDevice => ErrorKind::NoCompatibleDevice,
+            rotex_vulkan::ErrorKind::Unsupported(message) => ErrorKind::Unsupported(message),
+            rotex_vulkan::ErrorKind::Vulkan(code) => {
+                ErrorKind::Backend(format!("Vulkan error: {code:?} ({})", code.as_raw()))
+            }
+        };
+        Self { kind, severity }
     }
 }
+
+#[cfg(target_arch = "wasm32")]
+impl From<rotex_wgpu::Error> for Error {
+    fn from(value: rotex_wgpu::Error) -> Self {
+        let severity = match value.severity {
+            rotex_wgpu::Severity::Fatal => Severity::Fatal,
+            rotex_wgpu::Severity::Info
+            | rotex_wgpu::Severity::Warning
+            | rotex_wgpu::Severity::Recoverable => Severity::Warning,
+        };
+        let kind = match value.kind {
+            rotex_wgpu::ErrorKind::NoCompatibleDevice => ErrorKind::NoCompatibleDevice,
+            rotex_wgpu::ErrorKind::Unsupported(message) => ErrorKind::Unsupported(message),
+            other => ErrorKind::Backend(format!("{other:?}")),
+        };
+        Self { kind, severity }
+    }
+}
+

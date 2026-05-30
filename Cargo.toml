@@ -4,17 +4,30 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ash = { version = "0.38.0", features = ["linked"] }
 thiserror = "2.0.18"
+raw-window-handle = "0.6.2"
+rotex_types = { git = "https://github.com/rotexengine/rotex_types.git", branch = "main" }
 
 [build-dependencies]
 shaderc = "0.9.1"
 
 [dev-dependencies]
-ash-window = "0.13.0"
-raw-window-handle = "0.6.2"
 rfd = "0.17.2"
 winit = "0.30.13"
+pollster = "0.4.0"
+web-time = "1.1.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rotex_vulkan = { git = "https://github.com/rotexengine/rotex_vulkan.git" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+ash-window = "0.13.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+rotex_wgpu = { git = "https://github.com/rotexengine/rotex_wgpu.git" }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-futures = "0.4"
 
 [profile.dev]
 opt-level = 1
