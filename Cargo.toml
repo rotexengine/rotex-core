@@ -1,5 +1,5 @@
 [package]
-name = "rotex_core"
+name = "rotex-core"
 version = "0.1.0"
 edition = "2024"
 
@@ -9,7 +9,7 @@ raw-window-handle = "0.6.2"
 rotex_types = { git = "https://github.com/rotexengine/rotex_types.git", branch = "main" }
 
 [build-dependencies]
-shaderc = "0.9.1"
+shaderc = "0.10.1"
 
 [dev-dependencies]
 rfd = "0.17.2"
