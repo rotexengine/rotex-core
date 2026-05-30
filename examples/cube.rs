@@ -30,7 +30,7 @@ struct ColoredVertex {
 #[derive(Default)]
 struct App {
     window: Option<Window>,
-    engine: Option<GraphicsContext>,
+    graphics_context: Option<GraphicsContext>,
     scene: Option<SceneDescriptor>,
     frame: Option<FrameDescriptor>,
     mesh_id: Option<MeshId>,
@@ -42,9 +42,9 @@ struct App {
 
 impl App {
     #[cfg(target_arch = "wasm32")]
-    fn with_engine(engine: GraphicsContext) -> Self {
+    fn with_graphics_context(graphics_context: GraphicsContext) -> Self {
         Self {
-            engine: Some(engine),
+            graphics_context: Some(graphics_context),
             ..Default::default()
         }
     }
@@ -95,7 +95,7 @@ impl ApplicationHandler for App {
         };
 
         #[cfg(not(target_arch = "wasm32"))]
-        if self.engine.is_none() {
+        if self.graphics_context.is_none() {
             let mut desc = InstanceDescriptor::default();
             let required_extensions = match ash_window::enumerate_required_extensions(display_handle) {
                 Ok(exts) => exts,
@@ -111,21 +111,21 @@ impl ApplicationHandler for App {
                 .map(|extension| extension.to_string_lossy().into_owned())
                 .collect();
             match pollster::block_on(GraphicsContext::new(desc, DeviceDescriptor::default())) {
-                Ok(engine) => self.engine = Some(engine),
+                Ok(graphics_context) => self.graphics_context = Some(graphics_context),
                 Err(err) => {
-                    eprintln!("cube engine initialization failed: {err}");
+                    eprintln!("cube graphics_context initialization failed: {err}");
                     event_loop.exit();
                     return;
                 }
             }
         }
 
-        let Some(mut engine) = self.engine.take() else {
-            eprintln!("cube engine missing during resume");
+        let Some(mut graphics_context) = self.graphics_context.take() else {
+            eprintln!("cube graphics_context missing during resume");
             event_loop.exit();
             return;
         };
-        if let Err(err) = engine.attach_surface(SurfaceDescriptor {
+        if let Err(err) = graphics_context.attach_surface(SurfaceDescriptor {
                 display_handle,
                 window_handle,
                 extent: window_extent(&window),
@@ -137,7 +137,7 @@ impl ApplicationHandler for App {
 
         let (positions, colors, indices) = cube_geometry();
         let initial_vertices = build_vertices(&positions, &colors, 0.0);
-        let resources = match engine.create_resources(ResourceBatchCreate::new(vec![
+        let resources = match graphics_context.create_resources(ResourceBatchCreate::new(vec![
                 ResourceCreateDescriptor::Mesh(MeshDescriptor {
                     vertex_data: vertices_as_bytes(&initial_vertices),
                     vertex_layout: colored_vertex_layout(),
@@ -178,7 +178,7 @@ impl ApplicationHandler for App {
             return;
         };
 
-        let material_resources = match engine.create_resources(ResourceBatchCreate::new(vec![
+        let material_resources = match graphics_context.create_resources(ResourceBatchCreate::new(vec![
                 ResourceCreateDescriptor::Material(MaterialDescriptor {
                     vertex_shader_spv: include_bytes!(concat!(env!("OUT_DIR"), "/cube.vert.spv")).to_vec(),
                     vertex_entry: "main".to_string(),
@@ -217,7 +217,7 @@ impl ApplicationHandler for App {
 
         window.request_redraw();
         self.window = Some(window);
-        self.engine = Some(engine);
+        self.graphics_context = Some(graphics_context);
         self.scene = Some(scene);
         self.frame = Some(frame);
         self.mesh_id = Some(mesh_id);
@@ -236,8 +236,8 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
-                if let Some(engine) = self.engine.as_mut() {
-                    if let Err(err) = engine.resize(Extent2D {
+                if let Some(graphics_context) = self.graphics_context.as_mut() {
+                    if let Err(err) = graphics_context.resize(Extent2D {
                         width: size.width.max(1),
                         height: size.height.max(1),
                     }) {
@@ -247,8 +247,8 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                if let (Some(engine), Some(scene), Some(frame), Some(mesh_id), Some(start_time)) = (
-                    self.engine.as_mut(),
+                if let (Some(graphics_context), Some(scene), Some(frame), Some(mesh_id), Some(start_time)) = (
+                    self.graphics_context.as_mut(),
                     self.scene.as_ref(),
                     self.frame.as_ref(),
                     self.mesh_id,
@@ -264,12 +264,12 @@ impl ApplicationHandler for App {
                         index_format: IndexFormat::Uint32,
                         index_count: self.indices.len() as u32,
                     }]);
-                    if let Err(err) = engine.update_resources(update) {
+                    if let Err(err) = graphics_context.update_resources(update) {
                         eprintln!("resource update failed: {err}");
                         event_loop.exit();
                         return;
                     }
-                    if let Err(err) = engine.render(scene, frame) {
+                    if let Err(err) = graphics_context.render(scene, frame) {
                         eprintln!("render failed: {err}");
                         event_loop.exit();
                     }
@@ -290,8 +290,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::default();
     event_loop.run_app(&mut app)?;
 
-    if let Some(engine) = app.engine.take() {
-        engine.destroy();
+    if let Some(graphics_context) = app.graphics_context.take() {
+        graphics_context.destroy();
     }
     Ok(())
 }
@@ -302,8 +302,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     event_loop.set_control_flow(ControlFlow::Poll);
     spawn_local(async move {
         match GraphicsContext::new(InstanceDescriptor::default(), DeviceDescriptor::default()).await {
-            Ok(engine) => event_loop.spawn_app(App::with_engine(engine)),
-            Err(err) => eprintln!("cube engine initialization failed: {err}"),
+            Ok(graphics_context) => event_loop.spawn_app(App::with_graphics_context(graphics_context)),
+            Err(err) => eprintln!("cube graphics_context initialization failed: {err}"),
         }
     });
     Ok(())

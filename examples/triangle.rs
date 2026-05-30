@@ -16,7 +16,7 @@ use winit::{
 #[derive(Default)]
 struct App {
     window: Option<Window>,
-    engine: Option<GraphicsContext>,
+    graphics_context: Option<GraphicsContext>,
     scene: Option<SceneDescriptor>,
     frame: Option<FrameDescriptor>,
 }
@@ -60,17 +60,17 @@ impl ApplicationHandler for App {
             .map(|extension| extension.to_string_lossy().into_owned())
             .collect();
         }
-        let mut engine =
+        let mut graphics_context =
             pollster::block_on(GraphicsContext::new(instance_descriptor, DeviceDescriptor::default()))
-        .expect("triangle engine");
-        engine
+        .expect("triangle graphics_context");
+        graphics_context
             .attach_surface(SurfaceDescriptor {
                 display_handle,
                 window_handle,
                 extent: window_extent(&window),
             })
             .expect("attach surface");
-        let resources = engine
+        let resources = graphics_context
             .create_resources(ResourceBatchCreate::new(vec![
                 ResourceCreateDescriptor::Mesh(mesh_from_vertices(
                     &[
@@ -110,7 +110,7 @@ impl ApplicationHandler for App {
 
         window.request_redraw();
         self.window = Some(window);
-        self.engine = Some(engine);
+        self.graphics_context = Some(graphics_context);
         self.scene = Some(scene);
         self.frame = Some(frame);
     }
@@ -124,8 +124,8 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
-                if let Some(engine) = self.engine.as_mut() {
-                    if let Err(err) = engine.resize(Extent2D {
+                if let Some(graphics_context) = self.graphics_context.as_mut() {
+                    if let Err(err) = graphics_context.resize(Extent2D {
                         width: size.width.max(1),
                         height: size.height.max(1),
                     }) {
@@ -135,10 +135,10 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                if let (Some(engine), Some(scene), Some(frame)) =
-                    (self.engine.as_mut(), self.scene.as_ref(), self.frame.as_ref())
+                if let (Some(graphics_context), Some(scene), Some(frame)) =
+                    (self.graphics_context.as_mut(), self.scene.as_ref(), self.frame.as_ref())
                 {
-                    if let Err(err) = engine.render(scene, frame) {
+                    if let Err(err) = graphics_context.render(scene, frame) {
                         eprintln!("render failed: {err}");
                         event_loop.exit();
                     }
@@ -158,8 +158,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::default();
     event_loop.run_app(&mut app)?;
 
-    if let Some(engine) = app.engine.take() {
-        engine.destroy();
+    if let Some(graphics_context) = app.graphics_context.take() {
+        graphics_context.destroy();
     }
     Ok(())
 }

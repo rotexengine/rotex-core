@@ -13,7 +13,7 @@ use winit::{
 #[derive(Default)]
 struct App {
     window: Option<Window>,
-    engine: Option<GraphicsContext>,
+    graphics_context: Option<GraphicsContext>,
 }
 
 fn window_extent(window: &Window) -> Extent2D {
@@ -48,10 +48,10 @@ impl ApplicationHandler for App {
             .map(|extension| extension.to_string_lossy().into_owned())
             .collect();
         }
-        let mut engine =
+        let mut graphics_context =
             pollster::block_on(GraphicsContext::new(instance_descriptor, DeviceDescriptor::default()))
-                .expect("frontend engine");
-        engine
+                .expect("frontend graphics_context");
+        graphics_context
             .attach_surface(SurfaceDescriptor {
                 display_handle,
                 window_handle,
@@ -59,7 +59,7 @@ impl ApplicationHandler for App {
             })
             .expect("attach surface");
         self.window = Some(window);
-        self.engine = Some(engine);
+        self.graphics_context = Some(graphics_context);
     }
 
     fn window_event(
@@ -81,8 +81,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::default();
     event_loop.run_app(&mut app)?;
 
-    if let Some(engine) = app.engine.take() {
-        engine.destroy();
+    if let Some(graphics_context) = app.graphics_context.take() {
+        graphics_context.destroy();
     }
     Ok(())
 }

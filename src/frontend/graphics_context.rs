@@ -1,4 +1,4 @@
-// rotex_core/src/renderer.rs (Formerly engine.rs)
+// rotex_core/src/renderer.rs (Formerly graphics_context.rs)
 
 use crate::error::Error;
 use crate::bridge::BackendBridge;

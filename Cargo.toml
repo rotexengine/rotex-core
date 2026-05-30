@@ -38,6 +38,8 @@ opt-level = 1
 opt-level = 3
 debug = false
 lto = "fat"
+panic = "abort"
+strip = "symbols"
 
 [profile.release.package.'*']
 opt-level = 3
