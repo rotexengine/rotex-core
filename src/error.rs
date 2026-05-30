@@ -71,3 +71,19 @@ impl Error {
         }
     }
 }
+
+pub fn vk_error(err: vk::Result) -> Error {
+    let severity = if matches!(
+        err,
+        vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::SUBOPTIMAL_KHR
+    ) {
+        Severity::Warning
+    } else {
+        Severity::Fatal
+    };
+
+    Error {
+        kind: ErrorKind::Vulkan(err),
+        severity,
+    }
+}

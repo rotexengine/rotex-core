@@ -1,6 +1,7 @@
 use ash::vk;
 
-use crate::{Device, Error, ErrorKind, Instance};
+use crate::error::vk_error;
+use crate::{Device, Error, Instance};
 
 pub struct ImageDescriptor {
     pub format: vk::Format,
@@ -71,8 +72,7 @@ impl RotexImage {
         let image_handle = unsafe {
             device.logical_device().create_image(&image_create_info, None)
         }
-        .map_err(ErrorKind::Vulkan)
-        .map_err(Error::fatal)?;
+        .map_err(vk_error)?;
 
         // 2. Allocate and Bind Memory (Your logic here is already perfect)
         let mem_requirements = unsafe {
@@ -89,17 +89,13 @@ impl RotexImage {
             .allocation_size(mem_requirements.size)
             .memory_type_index(memory_type_index);
 
-        let device_memory = unsafe { 
-            device.logical_device().allocate_memory(&alloc_info, None) 
+        let device_memory = unsafe {
+            device.logical_device().allocate_memory(&alloc_info, None)
         }
-        .map_err(ErrorKind::Vulkan)
-        .map_err(Error::fatal)?;
+        .map_err(vk_error)?;
 
-        unsafe {
-            device.logical_device().bind_image_memory(image_handle, device_memory, 0)
-        }
-        .map_err(ErrorKind::Vulkan)
-        .map_err(Error::fatal)?;
+        unsafe { device.logical_device().bind_image_memory(image_handle, device_memory, 0) }
+            .map_err(vk_error)?;
 
         let aspect_mask = if desc.usage.contains(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT) {
             vk::ImageAspectFlags::DEPTH
@@ -122,8 +118,7 @@ impl RotexImage {
         let image_view = unsafe {
             device.logical_device().create_image_view(&view_create_info, None)
         }
-        .map_err(ErrorKind::Vulkan)
-        .map_err(Error::fatal)?;
+        .map_err(vk_error)?;
 
         Ok(Self {
             image_handle,

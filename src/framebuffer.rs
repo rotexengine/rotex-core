@@ -1,5 +1,6 @@
 use ash::vk;
 
+use crate::error::vk_error;
 use crate::Device;
 
 pub struct Framebuffer {
@@ -86,8 +87,7 @@ impl FramebufferBuilder {
                 .logical_device()
                 .create_framebuffer(&framebuffer_info, None)
         }
-        .map_err(crate::error::ErrorKind::Vulkan)
-        .map_err(crate::Error::fatal)?;
+        .map_err(vk_error)?;
 
         Ok(Framebuffer {
             framebuffer,

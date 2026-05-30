@@ -1,7 +1,7 @@
 use ash::vk;
 
 use crate::device::Device;
-use crate::error::{ErrorKind, Error, Severity};
+use crate::error::{vk_error, Error};
 
 pub struct Semaphore {
     pub(crate) handle: vk::Semaphore,
@@ -12,12 +12,8 @@ impl Semaphore {
         let create_info = vk::SemaphoreCreateInfo::default();
 
         let handle =
-            unsafe { device.logical_device().create_semaphore(&create_info, None) }.map_err(|err| {
-                Error {
-                    kind: ErrorKind::Vulkan(err),
-                    severity: Severity::Fatal,
-                }
-            })?;
+            unsafe { device.logical_device().create_semaphore(&create_info, None) }
+                .map_err(vk_error)?;
 
         Ok(Self { handle })
     }
@@ -46,12 +42,8 @@ impl Fence {
         }
 
         let handle =
-            unsafe { device.logical_device().create_fence(&create_info, None) }.map_err(|err| {
-                Error {
-                    kind: ErrorKind::Vulkan(err),
-                    severity: Severity::Fatal,
-                }
-            })?;
+            unsafe { device.logical_device().create_fence(&create_info, None) }
+                .map_err(vk_error)?;
 
         Ok(Self { handle })
     }
@@ -66,17 +58,11 @@ impl Fence {
                 .logical_device()
                 .wait_for_fences(&[self.handle], true, timeout_ns)
         }
-        .map_err(|err| Error {
-            kind: ErrorKind::Vulkan(err),
-            severity: Severity::Fatal,
-        })
+        .map_err(vk_error)
     }
 
     pub fn reset(&self, device: &Device) -> Result<(), Error> {
-        unsafe { device.logical_device().reset_fences(&[self.handle]) }.map_err(|err| Error {
-            kind: ErrorKind::Vulkan(err),
-            severity: Severity::Fatal,
-        })
+        unsafe { device.logical_device().reset_fences(&[self.handle]) }.map_err(vk_error)
     }
 
     pub fn destroy(&self, device: &Device) {

@@ -2,7 +2,8 @@ use std::ffi::CStr;
 
 use ash::vk;
 
-use crate::{Device, Error, ErrorKind};
+use crate::error::vk_error;
+use crate::{Device, Error};
 
 pub struct ShaderModule {
     pub(crate) handle: vk::ShaderModule,
@@ -17,8 +18,7 @@ impl ShaderModule {
                 .logical_device()
                 .create_shader_module(&create_info, None)
         }
-        .map_err(ErrorKind::Vulkan)
-        .map_err(Error::fatal)?;
+        .map_err(vk_error)?;
 
         Ok(Self { handle })
     }

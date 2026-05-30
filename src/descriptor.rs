@@ -1,5 +1,6 @@
 use ash::vk;
-use crate::{Device, Error, ErrorKind};
+use crate::error::vk_error;
+use crate::{Device, Error};
 
 pub struct DescriptorPool {
     handle: vk::DescriptorPool,
@@ -21,8 +22,7 @@ impl DescriptorPool {
                 .logical_device()
                 .create_descriptor_pool(&create_info, None)
         }
-        .map_err(ErrorKind::Vulkan)
-        .map_err(Error::fatal)?;
+        .map_err(vk_error)?;
 
         Ok(Self { handle })
     }
@@ -41,8 +41,7 @@ impl DescriptorPool {
                 .logical_device()
                 .allocate_descriptor_sets(&alloc_info)
         }
-        .map_err(ErrorKind::Vulkan)
-        .map_err(Error::fatal)?;
+        .map_err(vk_error)?;
 
         Ok(sets
             .into_iter()

@@ -3,7 +3,7 @@ use std::ffi::CStr;
 use ash::vk;
 
 use crate::device::Adapter;
-use crate::error::{ErrorKind, Error, Severity};
+use crate::error::{vk_error, Error};
 
 unsafe extern "system" fn vulkan_debug_utils_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
@@ -66,10 +66,7 @@ impl DebugMessenger {
             .pfn_user_callback(Some(vulkan_debug_utils_callback));
 
         let messenger = unsafe { debug_utils.create_debug_utils_messenger(&create_info, None) }
-            .map_err(|err| Error {
-                kind: ErrorKind::Vulkan(err),
-                severity: Severity::Fatal,
-            })?;
+            .map_err(vk_error)?;
 
         Ok(Self {
             debug_utils,
@@ -138,12 +135,7 @@ impl Instance {
             dbg!(&instance_create_info);
         }
         let instance =
-            unsafe { entry.create_instance(&instance_create_info, None) }.map_err(|err| {
-                Error {
-                    kind: ErrorKind::Vulkan(err),
-                    severity: Severity::Fatal,
-                }
-            })?;
+            unsafe { entry.create_instance(&instance_create_info, None) }.map_err(vk_error)?;
 
         let debug_messenger = if options.enable_debug_utils {
             let messenger = DebugMessenger::new(

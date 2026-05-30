@@ -1,6 +1,7 @@
 use ash::vk;
 
-use crate::{Device, Error, ErrorKind};
+use crate::error::vk_error;
+use crate::{Device, Error};
 
 pub struct DescriptorSetLayout {
     handle: vk::DescriptorSetLayout,
@@ -18,8 +19,7 @@ impl DescriptorSetLayout {
                 .logical_device()
                 .create_descriptor_set_layout(&create_info, None)
         }
-        .map_err(ErrorKind::Vulkan)
-        .map_err(Error::fatal)?;
+        .map_err(vk_error)?;
 
         Ok(Self { handle })
     }
@@ -56,8 +56,7 @@ impl GraphicsPipelineLayout {
                 .logical_device()
                 .create_pipeline_layout(&create_info, None)
         }
-        .map_err(crate::error::ErrorKind::Vulkan)
-        .map_err(Error::fatal)?;
+        .map_err(vk_error)?;
 
         Ok(Self { handle })
     }

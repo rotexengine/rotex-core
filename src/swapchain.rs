@@ -2,7 +2,7 @@ use ash::vk;
 
 use crate::core::Instance;
 use crate::device::{QueueCategory, Device};
-use crate::error::{ErrorKind, Error, Severity};
+use crate::error::{vk_error, ErrorKind, Error, Severity};
 use crate::sync::Semaphore;
 
 pub struct Surface {
@@ -81,29 +81,20 @@ impl Swapchain {
                 surface.handle(),
             )
         }
-        .map_err(|err| Error {
-            kind: ErrorKind::Vulkan(err),
-            severity: Severity::Fatal,
-        })?;
+        .map_err(vk_error)?;
         let surface_formats = unsafe {
             surface
                 .loader()
                 .get_physical_device_surface_formats(device.physical_device(), surface.handle())
         }
-        .map_err(|err| Error {
-            kind: ErrorKind::Vulkan(err),
-            severity: Severity::Fatal,
-        })?;
+        .map_err(vk_error)?;
         let present_modes = unsafe {
             surface.loader().get_physical_device_surface_present_modes(
                 device.physical_device(),
                 surface.handle(),
             )
         }
-        .map_err(|err| Error {
-            kind: ErrorKind::Vulkan(err),
-            severity: Severity::Fatal,
-        })?;
+        .map_err(vk_error)?;
 
         let preferred_format = [vk::Format::B8G8R8A8_SRGB, vk::Format::R8G8B8A8_SRGB];
         let preferred_color_space = vk::ColorSpaceKHR::SRGB_NONLINEAR;
@@ -115,7 +106,7 @@ impl Swapchain {
             })
             .or_else(|| surface_formats.first())
             .ok_or(Error {
-                kind: ErrorKind::NoCompatibleDevice,
+                kind: ErrorKind::Vulkan(vk::Result::ERROR_FORMAT_NOT_SUPPORTED),
                 severity: Severity::Fatal,
             })?;
 
@@ -155,17 +146,9 @@ impl Swapchain {
         let swapchain_loader =
             ash::khr::swapchain::Device::new(&instance.instance(), &device.logical_device());
         let swapchain = unsafe { swapchain_loader.create_swapchain(&swapchain_create_info, None) }
-            .map_err(|err| Error {
-                kind: ErrorKind::Vulkan(err),
-                severity: Severity::Fatal,
-            })?;
+            .map_err(vk_error)?;
         let images =
-            unsafe { swapchain_loader.get_swapchain_images(swapchain) }.map_err(|err| {
-                Error {
-                    kind: ErrorKind::Vulkan(err),
-                    severity: Severity::Fatal,
-                }
-            })?;
+            unsafe { swapchain_loader.get_swapchain_images(swapchain) }.map_err(vk_error)?;
 
         let image_views = images
             .iter()
@@ -180,12 +163,8 @@ impl Swapchain {
                             .level_count(1)
                             .layer_count(1),
                     );
-                unsafe { device.logical_device().create_image_view(&view_info, None) }.map_err(|err| {
-                    Error {
-                        kind: ErrorKind::Vulkan(err),
-                        severity: Severity::Fatal,
-                    }
-                })
+                unsafe { device.logical_device().create_image_view(&view_info, None) }
+                    .map_err(vk_error)
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -213,10 +192,7 @@ impl Swapchain {
                 vk::Fence::null(),
             )
         }
-        .map_err(|err| Error {
-            kind: ErrorKind::Vulkan(err),
-            severity: Severity::Fatal,
-        })
+        .map_err(vk_error)
     }
 
     pub fn present(
@@ -234,10 +210,7 @@ impl Swapchain {
             .swapchains(&swapchains)
             .image_indices(&image_indices);
 
-        unsafe { self.loader.queue_present(queue, &present_info) }.map_err(|err| Error {
-            kind: ErrorKind::Vulkan(err),
-            severity: Severity::Fatal,
-        })
+        unsafe { self.loader.queue_present(queue, &present_info) }.map_err(vk_error)
     }
 
     pub fn format(&self) -> vk::Format {

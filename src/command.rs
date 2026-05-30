@@ -1,7 +1,7 @@
 use ash::vk;
 
 use crate::device::{QueueCategory, Device};
-use crate::error::{ErrorKind, Error, Severity};
+use crate::error::{vk_error, ErrorKind, Error, Severity};
 use crate::pass::RenderPass;
 use crate::framebuffer::Framebuffer;
 
@@ -26,10 +26,7 @@ impl CommandBuffer {
                 .logical_device()
                 .begin_command_buffer(self.handle, &begin_info)
         }
-        .map_err(|err| Error {
-            kind: ErrorKind::Vulkan(err),
-            severity: Severity::Fatal,
-        })
+        .map_err(vk_error)
     }
 
     pub fn begin_render_pass(
@@ -70,10 +67,7 @@ impl CommandBuffer {
     }
 
     pub fn end(&self, device: &Device) -> Result<(), Error> {
-        unsafe { device.logical_device().end_command_buffer(self.handle) }.map_err(|err| Error {
-            kind: ErrorKind::Vulkan(err),
-            severity: Severity::Fatal,
-        })
+        unsafe { device.logical_device().end_command_buffer(self.handle) }.map_err(vk_error)
     }
 
     pub fn bind_graphics_pipeline(&self, device: &Device, pipeline: vk::Pipeline) {
@@ -135,12 +129,8 @@ impl CommandPool {
             .queue_family_index(graphics_queue.family_index);
 
         let handle =
-            unsafe { device.logical_device().create_command_pool(&pool_info, None) }.map_err(|err| {
-                Error {
-                    kind: ErrorKind::Vulkan(err),
-                    severity: Severity::Fatal,
-                }
-            })?;
+            unsafe { device.logical_device().create_command_pool(&pool_info, None) }
+                .map_err(vk_error)?;
 
         Ok(Self { handle })
     }
@@ -156,12 +146,8 @@ impl CommandPool {
             .command_buffer_count(count);
 
         let handles =
-            unsafe { device.logical_device().allocate_command_buffers(&alloc_info) }.map_err(|err| {
-                Error {
-                    kind: ErrorKind::Vulkan(err),
-                    severity: Severity::Fatal,
-                }
-            })?;
+            unsafe { device.logical_device().allocate_command_buffers(&alloc_info) }
+                .map_err(vk_error)?;
 
         Ok(handles
             .into_iter()

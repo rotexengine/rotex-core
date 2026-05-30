@@ -4,7 +4,7 @@ use std::ffi::CStr;
 use ash::vk;
 
 use crate::core::Instance;
-use crate::error::{Error, ErrorKind, Severity};
+use crate::error::{vk_error, Error, ErrorKind, Severity};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueueCategory {
@@ -105,10 +105,7 @@ impl Adapter {
                     .instance
                     .enumerate_device_extension_properties(self.handle)
             }
-            .map_err(|err| Error {
-                kind: ErrorKind::Vulkan(err),
-                severity: Severity::Fatal,
-            })?;
+            .map_err(vk_error)?;
             let has_swapchain = extensions.iter().any(|ext| unsafe {
                 CStr::from_ptr(ext.extension_name.as_ptr()) == vk::KHR_SWAPCHAIN_NAME
             });
@@ -203,10 +200,7 @@ impl Adapter {
                 .instance()
                 .create_device(self.handle, &device_create_info, None)
         }
-        .map_err(|err| Error {
-            kind: ErrorKind::Vulkan(err),
-            severity: Severity::Fatal,
-        })?;
+        .map_err(vk_error)?;
 
         Ok(Device {
             handle: self.handle,

@@ -1,6 +1,7 @@
 use ash::vk;
 
-use crate::{Device, Error, ErrorKind, Severity};
+use crate::error::vk_error;
+use crate::{Device, Error, ErrorKind};
 
 use super::shader::ShaderStageDescriptor;
 use super::state::{ColorBlendState, MultisampleState, RasterizationState, Viewport};
@@ -22,10 +23,7 @@ impl GraphicsPipeline {
                 None,
             )
         }
-        .map_err(|(_, err)| Error {
-            kind: ErrorKind::Vulkan(err),
-            severity: Severity::Fatal,
-        })?
+        .map_err(|(_, err)| vk_error(err))?
         .remove(0);
 
         Ok(Self { handle })
