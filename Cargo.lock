@@ -1539,9 +1539,9 @@ dependencies = [
  "pollster",
  "raw-window-handle",
  "rfd",
- "rotex_types",
- "rotex_vulkan",
- "rotex_wgpu",
+ "rotex-types",
+ "rotex-vulkan",
+ "rotex-wgpu",
  "shaderc",
  "thiserror 2.0.18",
  "wasm-bindgen-futures",
@@ -1550,31 +1550,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "rotex_types"
+name = "rotex-types"
 version = "0.1.0"
-source = "git+https://github.com/rotexengine/rotex_types.git?branch=main#2332e73bd5926ad0155820fff488000a0c324c0d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c85d23da4ccb37cd4c56aed1db7ecfeea2431e9d188bc0e394cfdb092a77b699"
 dependencies = [
  "raw-window-handle",
 ]
 
 [[package]]
-name = "rotex_vulkan"
+name = "rotex-vulkan"
 version = "0.1.0"
-source = "git+https://github.com/rotexengine/rotex_vulkan.git#4ef07d87d0f1621f7616fc126f2ecf25d2a2e2de"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5aae807abef746924a0bd7f3d95e4e1c9a91f9f1d013f51d147826e9c3ab4c8c"
 dependencies = [
  "ash",
  "ash-window",
  "raw-window-handle",
- "rotex_types",
+ "rotex-types",
 ]
 
 [[package]]
-name = "rotex_wgpu"
+name = "rotex-wgpu"
 version = "0.1.0"
-source = "git+https://github.com/rotexengine/rotex_wgpu.git#1c96153b6361a25c13703630934f280552b1ad1c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1384ed6a1ff1da70ae9ba7e41cac3fee1ae6111e3b6f18932e4f515f139f7edd"
 dependencies = [
  "raw-window-handle",
- "rotex_types",
+ "rotex-types",
  "wgpu",
 ]
 
