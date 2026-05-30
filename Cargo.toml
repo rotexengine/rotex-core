@@ -9,7 +9,7 @@ repository = "https://github.com/rotexengine/rotex-core"
 [dependencies]
 thiserror = "2.0.18"
 raw-window-handle = "0.6.2"
-rotex-types = { git = "https://github.com/rotexengine/rotex-types", branch = "staging" }
+rotex-types = { version = "0.1.1" }
 
 [build-dependencies]
 shaderc = "0.10.1"
@@ -21,13 +21,13 @@ pollster = "0.4.0"
 web-time = "1.1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rotex-vulkan = { git = "https://github.com/rotexengine/rotex-vulkan", branch = "staging" }
+rotex-vulkan = { version = "0.1.1" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 ash-window = "0.13.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-rotex-wgpu = { git = "https://github.com/rotexengine/rotex-wgpu", branch = "staging" }
+rotex-wgpu = { version = "0.1.1" }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-futures = "0.4"
