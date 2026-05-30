@@ -23,12 +23,12 @@ pub enum ErrorKind {
 }
 
 #[derive(Debug)]
-pub struct RotexError {
+pub struct Error {
     pub kind: ErrorKind,
     pub severity: Severity,
 }
 
-impl std::fmt::Display for RotexError {
+impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
             ErrorKind::Vulkan(err) => write!(
@@ -43,17 +43,31 @@ impl std::fmt::Display for RotexError {
     }
 }
 
-impl std::error::Error for RotexError {
+impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         Some(&self.kind)
     }
 }
 
-impl RotexError {
+impl Error {
     pub fn vk_result_code(&self) -> Option<i32> {
         match &self.kind {
             ErrorKind::Vulkan(err) => Some(err.as_raw()),
             _ => None,
+        }
+    }
+
+    pub fn fatal(kind: ErrorKind) -> Self {
+        Self {
+            kind,
+            severity: Severity::Fatal,
+        }
+    }
+
+    pub fn warning(kind: ErrorKind) -> Self {
+        Self {
+            kind,
+            severity: Severity::Warning,
         }
     }
 }

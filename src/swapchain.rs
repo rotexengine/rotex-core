@@ -1,16 +1,17 @@
 use ash::vk;
 
-use crate::device::{QueueCategory, RotexDevice, RotexInstance};
-use crate::error::{ErrorKind, RotexError, Severity};
-use crate::sync::RotexSemaphore;
+use crate::core::Instance;
+use crate::device::{QueueCategory, Device};
+use crate::error::{ErrorKind, Error, Severity};
+use crate::sync::Semaphore;
 
-pub struct RotexSurface {
-    loader: ash::khr::surface::Instance,
-    surface: vk::SurfaceKHR,
+pub struct Surface {
+    pub(crate) loader: ash::khr::surface::Instance,
+    pub(crate) surface: vk::SurfaceKHR,
 }
 
-impl RotexSurface {
-    pub fn new(instance: &RotexInstance, surface: vk::SurfaceKHR) -> Self {
+impl Surface {
+    pub fn new(instance: &Instance, surface: vk::SurfaceKHR) -> Self {
         let loader = ash::khr::surface::Instance::new(instance.entry(), instance.instance());
         Self { loader, surface }
     }
@@ -30,28 +31,46 @@ impl RotexSurface {
     }
 }
 
-pub struct RotexSwapchain {
-    loader: ash::khr::swapchain::Device,
-    swapchain: vk::SwapchainKHR,
-    _surface: vk::SurfaceKHR,
-    format: vk::Format,
-    color_space: vk::ColorSpaceKHR,
-    extent: vk::Extent2D,
-    images: Vec<vk::Image>,
-    image_views: Vec<vk::ImageView>,
+pub struct Swapchain {
+    pub(crate) loader: ash::khr::swapchain::Device,
+    pub(crate) swapchain: vk::SwapchainKHR,
+    pub(crate) _surface: vk::SurfaceKHR,
+    pub(crate) format: vk::Format,
+    pub(crate) color_space: vk::ColorSpaceKHR,
+    pub(crate) extent: vk::Extent2D,
+    pub(crate) images: Vec<vk::Image>,
+    pub(crate) image_views: Vec<vk::ImageView>,
 }
 
-impl RotexSwapchain {
+fn clamp_extent(extent: vk::Extent2D, capabilities: &vk::SurfaceCapabilitiesKHR) -> vk::Extent2D {
+    vk::Extent2D {
+        width: extent
+            .width
+            .clamp(
+                capabilities.min_image_extent.width,
+                capabilities.max_image_extent.width,
+            ),
+        height: extent
+            .height
+            .clamp(
+                capabilities.min_image_extent.height,
+                capabilities.max_image_extent.height,
+            ),
+    }
+}
+
+impl Swapchain {
     pub fn new(
-        instance: &RotexInstance,
-        device: &RotexDevice,
-        surface: &RotexSurface,
-    ) -> Result<Self, RotexError> {
+        instance: &Instance,
+        device: &Device,
+        surface: &Surface,
+        extent_hint: vk::Extent2D,
+    ) -> Result<Self, Error> {
         let queue = device
             .queues()
             .iter()
             .find(|allocation| allocation.category == QueueCategory::Graphics)
-            .ok_or(RotexError {
+            .ok_or(Error {
                 kind: ErrorKind::NoCompatibleDevice,
                 severity: Severity::Fatal,
             })?;
@@ -62,7 +81,7 @@ impl RotexSwapchain {
                 surface.handle(),
             )
         }
-        .map_err(|err| RotexError {
+        .map_err(|err| Error {
             kind: ErrorKind::Vulkan(err),
             severity: Severity::Fatal,
         })?;
@@ -71,7 +90,7 @@ impl RotexSwapchain {
                 .loader()
                 .get_physical_device_surface_formats(device.physical_device(), surface.handle())
         }
-        .map_err(|err| RotexError {
+        .map_err(|err| Error {
             kind: ErrorKind::Vulkan(err),
             severity: Severity::Fatal,
         })?;
@@ -81,7 +100,7 @@ impl RotexSwapchain {
                 surface.handle(),
             )
         }
-        .map_err(|err| RotexError {
+        .map_err(|err| Error {
             kind: ErrorKind::Vulkan(err),
             severity: Severity::Fatal,
         })?;
@@ -95,7 +114,7 @@ impl RotexSwapchain {
                     && format.color_space == preferred_color_space
             })
             .or_else(|| surface_formats.first())
-            .ok_or(RotexError {
+            .ok_or(Error {
                 kind: ErrorKind::NoCompatibleDevice,
                 severity: Severity::Fatal,
             })?;
@@ -109,10 +128,7 @@ impl RotexSwapchain {
         let extent = if surface_capabilities.current_extent.width != u32::MAX {
             surface_capabilities.current_extent
         } else {
-            vk::Extent2D {
-                width: surface_capabilities.min_image_extent.width,
-                height: surface_capabilities.min_image_extent.height,
-            }
+            clamp_extent(extent_hint, &surface_capabilities)
         };
 
         let mut image_count = surface_capabilities.min_image_count + 1;
@@ -137,15 +153,15 @@ impl RotexSwapchain {
             .clipped(true);
 
         let swapchain_loader =
-            ash::khr::swapchain::Device::new(&instance.instance(), &device.device());
+            ash::khr::swapchain::Device::new(&instance.instance(), &device.logical_device());
         let swapchain = unsafe { swapchain_loader.create_swapchain(&swapchain_create_info, None) }
-            .map_err(|err| RotexError {
+            .map_err(|err| Error {
                 kind: ErrorKind::Vulkan(err),
                 severity: Severity::Fatal,
             })?;
         let images =
             unsafe { swapchain_loader.get_swapchain_images(swapchain) }.map_err(|err| {
-                RotexError {
+                Error {
                     kind: ErrorKind::Vulkan(err),
                     severity: Severity::Fatal,
                 }
@@ -164,8 +180,8 @@ impl RotexSwapchain {
                             .level_count(1)
                             .layer_count(1),
                     );
-                unsafe { device.device().create_image_view(&view_info, None) }.map_err(|err| {
-                    RotexError {
+                unsafe { device.logical_device().create_image_view(&view_info, None) }.map_err(|err| {
+                    Error {
                         kind: ErrorKind::Vulkan(err),
                         severity: Severity::Fatal,
                     }
@@ -187,8 +203,8 @@ impl RotexSwapchain {
 
     pub fn acquire_next_image(
         &self,
-        semaphore: &RotexSemaphore,
-    ) -> Result<(u32, bool), RotexError> {
+        semaphore: &Semaphore,
+    ) -> Result<(u32, bool), Error> {
         unsafe {
             self.loader.acquire_next_image(
                 self.swapchain,
@@ -197,7 +213,7 @@ impl RotexSwapchain {
                 vk::Fence::null(),
             )
         }
-        .map_err(|err| RotexError {
+        .map_err(|err| Error {
             kind: ErrorKind::Vulkan(err),
             severity: Severity::Fatal,
         })
@@ -207,8 +223,8 @@ impl RotexSwapchain {
         &self,
         queue: vk::Queue,
         image_index: u32,
-        wait_semaphore: &RotexSemaphore,
-    ) -> Result<bool, RotexError> {
+        wait_semaphore: &Semaphore,
+    ) -> Result<bool, Error> {
         let wait_semaphores = [wait_semaphore.handle];
         let swapchains = [self.swapchain];
         let image_indices = [image_index];
@@ -218,7 +234,7 @@ impl RotexSwapchain {
             .swapchains(&swapchains)
             .image_indices(&image_indices);
 
-        unsafe { self.loader.queue_present(queue, &present_info) }.map_err(|err| RotexError {
+        unsafe { self.loader.queue_present(queue, &present_info) }.map_err(|err| Error {
             kind: ErrorKind::Vulkan(err),
             severity: Severity::Fatal,
         })
@@ -244,10 +260,10 @@ impl RotexSwapchain {
         &self.image_views
     }
 
-    pub fn destroy(&mut self, device: &RotexDevice) {
+    pub fn destroy(&mut self, device: &Device) {
         unsafe {
             for view in self.image_views.drain(..) {
-                device.device().destroy_image_view(view, None);
+                device.logical_device().destroy_image_view(view, None);
             }
             self.loader.destroy_swapchain(self.swapchain, None);
         }

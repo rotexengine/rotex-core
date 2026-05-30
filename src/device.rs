@@ -3,157 +3,8 @@ use std::ffi::CStr;
 
 use ash::vk;
 
-use crate::error::{ErrorKind, RotexError, Severity};
-
-unsafe extern "system" fn vulkan_debug_utils_callback(
-    message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
-    message_type: vk::DebugUtilsMessageTypeFlagsEXT,
-    p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
-    _p_user_data: *mut std::ffi::c_void,
-) -> vk::Bool32 {
-    if p_callback_data.is_null() {
-        return vk::FALSE;
-    }
-
-    let message = unsafe { std::ffi::CStr::from_ptr((*p_callback_data).p_message) };
-    let severity = format!("{:?}", message_severity).to_lowercase();
-    let ty = format!("{:?}", message_type).to_lowercase();
-    println!("[Debug][{}][{}] {:?}", severity, ty, message);
-    vk::FALSE
-}
-
-pub struct RotexInstance {
-    entry: ash::Entry,
-    instance: ash::Instance,
-    _debug_utils: Option<ash::ext::debug_utils::Instance>,
-    _debug_messenger: Option<vk::DebugUtilsMessengerEXT>,
-}
-
-impl RotexInstance {
-    pub fn new(extensions: &[*const i8]) -> Result<Self, RotexError> {
-        let enable_validation = cfg!(debug_assertions);
-        let entry = ash::Entry::linked();
-        let appname = std::ffi::CString::new("Rotex").unwrap();
-        let enginename = std::ffi::CString::new("Rotex").unwrap();
-        let app_info = vk::ApplicationInfo::default()
-            .application_name(&appname)
-            .engine_name(&enginename)
-            .application_version(vk::make_api_version(0, 0, 1, 0))
-            .engine_version(vk::make_api_version(0, 0, 1, 0))
-            .api_version(vk::make_api_version(0, 1, 4, 0));
-        let layer_names: Vec<std::ffi::CString> = if enable_validation {
-            vec![std::ffi::CString::new("VK_LAYER_KHRONOS_validation").unwrap()]
-        } else {
-            Vec::new()
-        };
-        let layer_name_pointers: Vec<*const i8> = layer_names
-            .iter()
-            .map(|layer_name| layer_name.as_ptr())
-            .collect();
-        let mut extension_name_pointers = extensions.to_vec();
-        if enable_validation {
-            extension_name_pointers.push(ash::ext::debug_utils::NAME.as_ptr());
-        }
-
-        let mut debugcreateinfo = vk::DebugUtilsMessengerCreateInfoEXT::default()
-            .message_severity(
-                vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
-                    | vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE
-                    | vk::DebugUtilsMessageSeverityFlagsEXT::INFO
-                    | vk::DebugUtilsMessageSeverityFlagsEXT::ERROR,
-            )
-            .message_type(
-                vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
-                    | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
-                    | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION,
-            )
-            .pfn_user_callback(Some(vulkan_debug_utils_callback));
-
-        let mut instance_create_info = vk::InstanceCreateInfo::default()
-            .application_info(&app_info)
-            .enabled_layer_names(layer_name_pointers.as_ref())
-            .enabled_extension_names(extension_name_pointers.as_ref());
-        if enable_validation {
-            instance_create_info = instance_create_info.push_next(&mut debugcreateinfo);
-        }
-        if enable_validation {
-            dbg!(&instance_create_info);
-        }
-        let instance =
-            unsafe { entry.create_instance(&instance_create_info, None) }.map_err(|err| {
-                RotexError {
-                    kind: ErrorKind::Vulkan(err),
-                    severity: Severity::Fatal,
-                }
-            })?;
-
-        let (_debug_utils, _debug_messenger) = if enable_validation {
-            let debug_utils = ash::ext::debug_utils::Instance::new(&entry, &instance);
-            let debug_messenger =
-                unsafe { debug_utils.create_debug_utils_messenger(&debugcreateinfo, None) };
-            match debug_messenger {
-                Ok(debug_messenger) => (Some(debug_utils), Some(debug_messenger)),
-                Err(err) => {
-                    unsafe {
-                        instance.destroy_instance(None);
-                    }
-                    return Err(RotexError {
-                        kind: ErrorKind::Vulkan(err),
-                        severity: Severity::Fatal,
-                    });
-                }
-            }
-        } else {
-            (None, None)
-        };
-
-        Ok(Self {
-            entry,
-            instance,
-            _debug_utils,
-            _debug_messenger,
-        })
-    }
-
-    pub fn entry(&self) -> &ash::Entry {
-        &self.entry
-    }
-
-    pub fn instance(&self) -> &ash::Instance {
-        &self.instance
-    }
-
-    pub fn enumerate_adapters(&self) -> Vec<RotexAdapter> {
-        let devices = unsafe { self.instance.enumerate_physical_devices() }.unwrap_or_else(|err| {
-            eprintln!("failed to enumerate physical devices: {err:?}");
-            Vec::new()
-        });
-
-        devices
-            .into_iter()
-            .map(|handle| {
-                let props = unsafe { self.instance.get_physical_device_properties(handle) };
-                let name = unsafe { CStr::from_ptr(props.device_name.as_ptr()) }
-                    .to_string_lossy()
-                    .into_owned();
-                RotexAdapter::new(handle, name, props.device_type, props.limits)
-            })
-            .collect()
-    }
-
-    pub fn destroy(&mut self) {
-        unsafe {
-            if let (Some(debug_utils), Some(debug_messenger)) =
-                (self._debug_utils.as_ref(), self._debug_messenger)
-            {
-                debug_utils.destroy_debug_utils_messenger(debug_messenger, None);
-            }
-            self._debug_messenger = None;
-            self._debug_utils = None;
-            self.instance.destroy_instance(None);
-        }
-    }
-}
+use crate::core::Instance;
+use crate::error::{Error, ErrorKind, Severity};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueueCategory {
@@ -175,14 +26,14 @@ pub struct DeviceDescriptor {
     pub queues: Vec<QueueRequest>,
 }
 
-pub struct RotexAdapter {
-    handle: vk::PhysicalDevice,
+pub struct Adapter {
+    pub(crate) handle: vk::PhysicalDevice,
     name: String,
     device_type: vk::PhysicalDeviceType,
     limits: vk::PhysicalDeviceLimits,
 }
 
-impl RotexAdapter {
+impl Adapter {
     pub(crate) fn new(
         handle: vk::PhysicalDevice,
         name: String,
@@ -215,9 +66,9 @@ impl RotexAdapter {
 
     pub fn request_device(
         &self,
-        instance: &RotexInstance,
+        instance: &Instance,
         desc: DeviceDescriptor,
-    ) -> Result<RotexDevice, RotexError> {
+    ) -> Result<Device, Error> {
         let queue_families = unsafe {
             instance
                 .instance()
@@ -251,10 +102,10 @@ impl RotexAdapter {
         if desc.enable_swapchain {
             let extensions = unsafe {
                 instance
-                    .instance()
+                    .instance
                     .enumerate_device_extension_properties(self.handle)
             }
-            .map_err(|err| RotexError {
+            .map_err(|err| Error {
                 kind: ErrorKind::Vulkan(err),
                 severity: Severity::Fatal,
             })?;
@@ -262,7 +113,7 @@ impl RotexAdapter {
                 CStr::from_ptr(ext.extension_name.as_ptr()) == vk::KHR_SWAPCHAIN_NAME
             });
             if !has_swapchain {
-                return Err(RotexError {
+                return Err(Error {
                     kind: ErrorKind::NoCompatibleDevice,
                     severity: Severity::Fatal,
                 });
@@ -285,7 +136,7 @@ impl RotexAdapter {
             let family_index = match family_index {
                 Some(index) => index,
                 None => {
-                    return Err(RotexError {
+                    return Err(Error {
                         kind: ErrorKind::NoCompatibleDevice,
                         severity: Severity::Fatal,
                     });
@@ -299,7 +150,7 @@ impl RotexAdapter {
         }
 
         if allocations.is_empty() {
-            return Err(RotexError {
+            return Err(Error {
                 kind: ErrorKind::NoCompatibleDevice,
                 severity: Severity::Fatal,
             });
@@ -352,12 +203,12 @@ impl RotexAdapter {
                 .instance()
                 .create_device(self.handle, &device_create_info, None)
         }
-        .map_err(|err| RotexError {
+        .map_err(|err| Error {
             kind: ErrorKind::Vulkan(err),
             severity: Severity::Fatal,
         })?;
 
-        Ok(RotexDevice {
+        Ok(Device {
             handle: self.handle,
             device,
             queues: allocations,
@@ -372,14 +223,14 @@ pub struct QueueAllocation {
     pub count: u32,
 }
 
-pub struct RotexDevice {
-    handle: vk::PhysicalDevice,
-    device: ash::Device,
+pub struct Device {
+    pub(crate) handle: vk::PhysicalDevice,
+    pub(crate) device: ash::Device,
     queues: Vec<QueueAllocation>,
 }
 
-impl RotexDevice {
-    pub fn device(&self) -> &ash::Device {
+impl Device {
+    pub fn logical_device(&self) -> &ash::Device {
         &self.device
     }
 
@@ -393,6 +244,31 @@ impl RotexDevice {
 
     pub fn get_queue(&self, family_index: u32, queue_index: u32) -> vk::Queue {
         unsafe { self.device.get_device_queue(family_index, queue_index) }
+    }
+
+    pub fn find_memory_type(
+        &self,
+        instance: &Instance,
+        type_filter: u32,
+        properties: vk::MemoryPropertyFlags,
+    ) -> Result<u32, Error> {
+        let memory_properties = unsafe {
+            instance
+                .instance()
+                .get_physical_device_memory_properties(self.physical_device())
+        };
+
+        for (index, memory_type) in memory_properties.memory_types.iter().enumerate() {
+            let is_allowed_by_hardware = (type_filter & (1 << index)) != 0;
+
+            let has_required_properties = memory_type.property_flags.contains(properties);
+
+            if is_allowed_by_hardware && has_required_properties {
+                return Ok(index as u32);
+            }
+        }
+
+        Err(Error::fatal(ErrorKind::NoCompatibleDevice))
     }
 
     pub fn destroy(&mut self) {

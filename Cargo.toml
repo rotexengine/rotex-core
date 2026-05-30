@@ -1,11 +1,14 @@
 [package]
-name = "rotex-core"
+name = "rotex_core"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 ash = { version = "0.38.0", features = ["linked"] }
 thiserror = "2.0.18"
+
+[build-dependencies]
+shaderc = "0.9.1"
 
 [dev-dependencies]
 ash-window = "0.13.0"

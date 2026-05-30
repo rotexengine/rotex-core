@@ -1,15 +1,18 @@
 use ash::vk;
-use rotex_core::{DeviceDescriptor, QueueCategory, QueueRequest, RotexAdapter, RotexDevice, RotexInstance};
+use rotex_core::{
+    Adapter, DebugMessenger, Device, DeviceDescriptor, Instance, QueueCategory, QueueRequest,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut instance: RotexInstance = RotexInstance::new(&[]).map_err(|err| {
+    let (mut instance, debug_messenger): (Instance, Option<DebugMessenger>) =
+        Instance::new(&[]).map_err(|err| {
         std::io::Error::new(
             std::io::ErrorKind::Other,
             format!("failed to initialize Vulkan instance: {err}"),
         )
     })?;
 
-    let adapter: RotexAdapter = instance
+    let adapter: Adapter = instance
         .enumerate_adapters()
         .into_iter()
         .next()
@@ -32,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ],
     };
 
-    let mut device: RotexDevice = adapter.request_device(&instance, descriptor).map_err(|err| {
+    let mut device: Device = adapter.request_device(&instance, descriptor).map_err(|err| {
         std::io::Error::new(
             std::io::ErrorKind::Other,
             format!("failed to initialize logical device: {err}"),
@@ -42,6 +45,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Headless device initialized on adapter: {}", adapter.name());
 
     device.destroy();
+    if let Some(debug_messenger) = debug_messenger {
+        debug_messenger.destroy();
+    }
     instance.destroy();
     Ok(())
 }

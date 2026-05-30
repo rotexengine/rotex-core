@@ -1,23 +1,29 @@
 mod command;
+mod core;
 mod device;
 mod error;
 mod pass;
-mod shader;
 mod swapchain;
 mod sync;
+mod graphics_pipeline;
+mod image;
+mod framebuffer;
+mod descriptor;
 
-pub use command::{RotexCommandBuffer, RotexCommandPool};
+pub use command::{CommandBuffer, CommandPool};
+pub use core::{DebugMessenger, Instance, InstanceOptions};
 pub use device::{
-    DeviceDescriptor, QueueAllocation, QueueCategory, QueueRequest, RotexAdapter, RotexDevice,
-    RotexInstance,
+    Adapter, Device, DeviceDescriptor, QueueAllocation, QueueCategory, QueueRequest,
 };
-pub use error::{ErrorKind, RotexError, Severity};
+pub use error::{Error, ErrorKind, Severity};
 pub use pass::{
-    Framebuffer, FramebufferBuilder, RenderPass, RenderPassBuilder, SubpassBlueprint,
+    RenderPass, RenderPassBuilder, SubpassBlueprint,
 };
-pub use swapchain::{RotexSurface, RotexSwapchain};
-pub use sync::{RotexFence, RotexSemaphore};
-
-pub type RotexRenderPass = RenderPass;
-pub type RotexFramebuffer = Framebuffer;
-pub type RotexFramebufferBuilder = FramebufferBuilder;
+pub use swapchain::{Surface, Swapchain};
+pub use sync::{Fence, Semaphore};
+pub use graphics_pipeline::{
+    ColorBlendAttachmentState, ColorBlendState, GraphicsPipeline, GraphicsPipelineBuilder,
+    GraphicsPipelineLayout, RasterizationState, ShaderModule, ShaderStageDescriptor, Vertex,
+    VertexInputDescriptor,
+};
+pub use framebuffer::{Framebuffer, FramebufferBuilder};

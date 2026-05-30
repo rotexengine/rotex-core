@@ -1,6 +1,6 @@
 use ash::vk;
 
-use crate::device::RotexDevice;
+use crate::device::Device;
 
 #[derive(Debug, Clone)]
 pub struct SubpassBlueprint {
@@ -9,7 +9,7 @@ pub struct SubpassBlueprint {
 }
 
 pub struct RenderPass {
-    render_pass: vk::RenderPass,
+    pub(crate) render_pass: vk::RenderPass,
     attachments: Vec<vk::AttachmentDescription>,
 }
 
@@ -22,9 +22,9 @@ impl RenderPass {
         &self.attachments
     }
 
-    pub fn destroy(&self, device: &RotexDevice) {
+    pub fn destroy(&self, device: &Device) {
         unsafe {
-            device.device().destroy_render_pass(self.render_pass, None);
+            device.logical_device().destroy_render_pass(self.render_pass, None);
         }
     }
 }
@@ -59,7 +59,7 @@ impl RenderPassBuilder {
         self
     }
 
-    pub fn build(self, device: &RotexDevice) -> Result<RenderPass, vk::Result> {
+    pub fn build(self, device: &Device) -> Result<RenderPass, vk::Result> {
         let mut all_color_refs: Vec<Vec<vk::AttachmentReference>> =
             Vec::with_capacity(self.subpasses.len());
         let mut all_depth_refs: Vec<Option<vk::AttachmentReference>> =
@@ -107,89 +107,12 @@ impl RenderPassBuilder {
 
         let render_pass = unsafe {
             device
-                .device()
+                .logical_device()
                 .create_render_pass(&render_pass_info, None)?
         };
         Ok(RenderPass {
             render_pass,
             attachments: self.attachments,
-        })
-    }
-}
-
-pub struct Framebuffer {
-    framebuffer: vk::Framebuffer,
-    extent: vk::Extent2D,
-}
-
-impl Framebuffer {
-    pub fn handle(&self) -> vk::Framebuffer {
-        self.framebuffer
-    }
-
-    pub fn extent(&self) -> vk::Extent2D {
-        self.extent
-    }
-
-    pub fn destroy(&self, device: &RotexDevice) {
-        unsafe {
-            device.device().destroy_framebuffer(self.framebuffer, None);
-        }
-    }
-}
-
-pub struct FramebufferBuilder {
-    attachments: Vec<vk::ImageView>,
-    width: u32,
-    height: u32,
-    layers: u32,
-}
-
-impl FramebufferBuilder {
-    pub fn new() -> Self {
-        Self {
-            attachments: Vec::new(),
-            width: 0,
-            height: 0,
-            layers: 1,
-        }
-    }
-
-    pub fn with_attachment(mut self, attachment: vk::ImageView) -> Self {
-        self.attachments.push(attachment);
-        self
-    }
-
-    pub fn with_extent(mut self, width: u32, height: u32) -> Self {
-        self.width = width;
-        self.height = height;
-        self
-    }
-
-    pub fn with_layers(mut self, layers: u32) -> Self {
-        self.layers = layers;
-        self
-    }
-
-    pub fn build(
-        self,
-        device: &RotexDevice,
-        render_pass: vk::RenderPass,
-    ) -> Result<Framebuffer, vk::Result> {
-        let framebuffer_info = vk::FramebufferCreateInfo::default()
-            .render_pass(render_pass)
-            .attachments(&self.attachments)
-            .width(self.width)
-            .height(self.height)
-            .layers(self.layers);
-
-        let framebuffer = unsafe { device.device().create_framebuffer(&framebuffer_info, None) }?;
-        Ok(Framebuffer {
-            framebuffer,
-            extent: vk::Extent2D {
-                width: self.width,
-                height: self.height,
-            },
         })
     }
 }

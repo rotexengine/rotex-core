@@ -1,19 +1,19 @@
 use ash::vk;
 
-use crate::device::RotexDevice;
-use crate::error::{ErrorKind, RotexError, Severity};
+use crate::device::Device;
+use crate::error::{ErrorKind, Error, Severity};
 
-pub struct RotexSemaphore {
-    pub handle: vk::Semaphore,
+pub struct Semaphore {
+    pub(crate) handle: vk::Semaphore,
 }
 
-impl RotexSemaphore {
-    pub fn new(device: &RotexDevice) -> Result<Self, RotexError> {
+impl Semaphore {
+    pub fn new(device: &Device) -> Result<Self, Error> {
         let create_info = vk::SemaphoreCreateInfo::default();
 
         let handle =
-            unsafe { device.device().create_semaphore(&create_info, None) }.map_err(|err| {
-                RotexError {
+            unsafe { device.logical_device().create_semaphore(&create_info, None) }.map_err(|err| {
+                Error {
                     kind: ErrorKind::Vulkan(err),
                     severity: Severity::Fatal,
                 }
@@ -22,19 +22,23 @@ impl RotexSemaphore {
         Ok(Self { handle })
     }
 
-    pub fn destroy(&self, device: &RotexDevice) {
+    pub fn handle(&self) -> vk::Semaphore {
+        self.handle
+    }
+
+    pub fn destroy(&self, device: &Device) {
         unsafe {
-            device.device().destroy_semaphore(self.handle, None);
+            device.logical_device().destroy_semaphore(self.handle, None);
         }
     }
 }
 
-pub struct RotexFence {
-    handle: vk::Fence,
+pub struct Fence {
+    pub(crate) handle: vk::Fence,
 }
 
-impl RotexFence {
-    pub fn new(device: &RotexDevice, signaled: bool) -> Result<Self, RotexError> {
+impl Fence {
+    pub fn new(device: &Device, signaled: bool) -> Result<Self, Error> {
         let mut create_info = vk::FenceCreateInfo::default();
 
         if signaled {
@@ -42,8 +46,8 @@ impl RotexFence {
         }
 
         let handle =
-            unsafe { device.device().create_fence(&create_info, None) }.map_err(|err| {
-                RotexError {
+            unsafe { device.logical_device().create_fence(&create_info, None) }.map_err(|err| {
+                Error {
                     kind: ErrorKind::Vulkan(err),
                     severity: Severity::Fatal,
                 }
@@ -56,28 +60,28 @@ impl RotexFence {
         self.handle
     }
 
-    pub fn wait(&self, device: &RotexDevice, timeout_ns: u64) -> Result<(), RotexError> {
+    pub fn wait(&self, device: &Device, timeout_ns: u64) -> Result<(), Error> {
         unsafe {
             device
-                .device()
+                .logical_device()
                 .wait_for_fences(&[self.handle], true, timeout_ns)
         }
-        .map_err(|err| RotexError {
+        .map_err(|err| Error {
             kind: ErrorKind::Vulkan(err),
             severity: Severity::Fatal,
         })
     }
 
-    pub fn reset(&self, device: &RotexDevice) -> Result<(), RotexError> {
-        unsafe { device.device().reset_fences(&[self.handle]) }.map_err(|err| RotexError {
+    pub fn reset(&self, device: &Device) -> Result<(), Error> {
+        unsafe { device.logical_device().reset_fences(&[self.handle]) }.map_err(|err| Error {
             kind: ErrorKind::Vulkan(err),
             severity: Severity::Fatal,
         })
     }
 
-    pub fn destroy(&self, device: &RotexDevice) {
+    pub fn destroy(&self, device: &Device) {
         unsafe {
-            device.device().destroy_fence(self.handle, None);
+            device.logical_device().destroy_fence(self.handle, None);
         }
     }
 }

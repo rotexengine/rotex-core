@@ -1,8 +1,12 @@
+use std::mem::size_of;
+
 use ash::vk;
 use rotex_core::{
-    CommandBuffer, CommandPool, DebugMessenger, Device, DeviceDescriptor, Error, ErrorKind, Fence,
-    Framebuffer, FramebufferBuilder, Instance, QueueCategory, QueueRequest, RenderPass,
-    RenderPassBuilder, Semaphore, Severity, SubpassBlueprint, Surface, Swapchain,
+    ColorBlendAttachmentState, ColorBlendState, CommandBuffer, CommandPool, DebugMessenger, Device,
+    DeviceDescriptor, Error, ErrorKind, Fence, Framebuffer, FramebufferBuilder, GraphicsPipeline,
+    GraphicsPipelineBuilder, GraphicsPipelineLayout, Instance, QueueCategory, QueueRequest,
+    RasterizationState, RenderPass, RenderPassBuilder, Semaphore, Severity, ShaderModule,
+    ShaderStageDescriptor, SubpassBlueprint, Surface, Swapchain, Vertex, VertexInputDescriptor,
 };
 use winit::{
     application::ApplicationHandler,
@@ -13,11 +17,130 @@ use winit::{
     window::{Window, WindowId},
 };
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct TriangleVertex {
+    position: [f32; 2],
+    color: [f32; 3],
+}
+
+impl Vertex for TriangleVertex {
+    fn descriptor() -> VertexInputDescriptor {
+        VertexInputDescriptor::new()
+            .with_binding(
+                vk::VertexInputBindingDescription::default()
+                    .binding(0)
+                    .stride(size_of::<TriangleVertex>() as u32)
+                    .input_rate(vk::VertexInputRate::VERTEX),
+            )
+            .with_attribute(
+                vk::VertexInputAttributeDescription::default()
+                    .binding(0)
+                    .location(0)
+                    .format(vk::Format::R32G32_SFLOAT)
+                    .offset(0),
+            )
+            .with_attribute(
+                vk::VertexInputAttributeDescription::default()
+                    .binding(0)
+                    .location(1)
+                    .format(vk::Format::R32G32B32_SFLOAT)
+                    .offset(8),
+            )
+    }
+}
+
+const TRIANGLE_VERTICES: [TriangleVertex; 3] = [
+    TriangleVertex {
+        position: [0.0, -0.5],
+        color: [1.0, 0.0, 0.0],
+    },
+    TriangleVertex {
+        position: [0.5, 0.5],
+        color: [0.0, 1.0, 0.0],
+    },
+    TriangleVertex {
+        position: [-0.5, 0.5],
+        color: [0.0, 0.0, 1.0],
+    },
+];
+
 struct App {
     instance: Option<Instance>,
     debug_messenger: Option<DebugMessenger>,
     window: Option<Window>,
     renderer: Option<Renderer>,
+}
+
+struct VertexBuffer {
+    buffer: vk::Buffer,
+    memory: vk::DeviceMemory,
+}
+
+impl VertexBuffer {
+    fn new(
+        instance: &Instance,
+        device: &Device,
+        vertices: &[TriangleVertex],
+    ) -> Result<Self, Error> {
+        let size = size_of_val(vertices) as vk::DeviceSize;
+
+        let buffer_info = vk::BufferCreateInfo::default()
+            .size(size)
+            .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let buffer = unsafe { device.logical_device().create_buffer(&buffer_info, None) }
+            .map_err(vulkan_error)?;
+
+        let requirements = unsafe {
+            device
+                .logical_device()
+                .get_buffer_memory_requirements(buffer)
+        };
+
+        let memory_type = find_memory_type(
+            instance,
+            device.physical_device(),
+            requirements.memory_type_bits,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        )?;
+
+        let alloc_info = vk::MemoryAllocateInfo::default()
+            .allocation_size(requirements.size)
+            .memory_type_index(memory_type);
+
+        let memory = unsafe { device.logical_device().allocate_memory(&alloc_info, None) }
+            .map_err(vulkan_error)?;
+
+        unsafe {
+            device
+                .logical_device()
+                .bind_buffer_memory(buffer, memory, 0)
+                .map_err(vulkan_error)?;
+
+            let data = device
+                .logical_device()
+                .map_memory(memory, 0, size, vk::MemoryMapFlags::empty())
+                .map_err(vulkan_error)?;
+
+            std::ptr::copy_nonoverlapping(vertices.as_ptr(), data.cast(), vertices.len());
+            device.logical_device().unmap_memory(memory);
+        }
+
+        Ok(Self { buffer, memory })
+    }
+
+    fn buffer(&self) -> vk::Buffer {
+        self.buffer
+    }
+
+    fn destroy(self, device: &Device) {
+        unsafe {
+            device.logical_device().destroy_buffer(self.buffer, None);
+            device.logical_device().free_memory(self.memory, None);
+        }
+    }
 }
 
 struct Renderer {
@@ -28,6 +151,11 @@ struct Renderer {
     swapchain: Swapchain,
     render_pass: RenderPass,
     framebuffers: Vec<Framebuffer>,
+    pipeline_layout: GraphicsPipelineLayout,
+    pipeline: GraphicsPipeline,
+    vert_shader: ShaderModule,
+    frag_shader: ShaderModule,
+    vertex_buffer: VertexBuffer,
     command_pool: CommandPool,
     command_buffer: CommandBuffer,
     image_available: Semaphore,
@@ -50,6 +178,51 @@ fn is_swapchain_out_of_date(err: &Error) -> bool {
         err.vk_result_code(),
         Some(code) if code == vk::Result::ERROR_OUT_OF_DATE_KHR.as_raw()
     )
+}
+
+fn spirv_words(bytes: &[u8]) -> Vec<u32> {
+    bytes
+        .chunks_exact(4)
+        .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("valid spv word")))
+        .collect()
+}
+
+fn load_shaders(device: &Device) -> Result<(ShaderModule, ShaderModule), Error> {
+    let vert_bytes = include_bytes!(concat!(env!("OUT_DIR"), "/triangle.vert.spv"));
+    let frag_bytes = include_bytes!(concat!(env!("OUT_DIR"), "/triangle.frag.spv"));
+
+    let vert_words = spirv_words(vert_bytes);
+    let frag_words = spirv_words(frag_bytes);
+
+    let vert_shader = ShaderModule::new(device, &vert_words)?;
+    let frag_shader = ShaderModule::new(device, &frag_words)?;
+    Ok((vert_shader, frag_shader))
+}
+
+fn find_memory_type(
+    instance: &Instance,
+    physical_device: vk::PhysicalDevice,
+    type_filter: u32,
+    properties: vk::MemoryPropertyFlags,
+) -> Result<u32, Error> {
+    let memory_properties = unsafe {
+        instance
+            .instance()
+            .get_physical_device_memory_properties(physical_device)
+    };
+
+    memory_properties
+        .memory_types
+        .iter()
+        .enumerate()
+        .find(|(index, memory_type)| {
+            (type_filter & (1 << index)) != 0 && memory_type.property_flags.contains(properties)
+        })
+        .map(|(index, _)| index as u32)
+        .ok_or(Error {
+            kind: ErrorKind::NoCompatibleDevice,
+            severity: Severity::Fatal,
+        })
 }
 
 fn window_extent(window: &Window) -> vk::Extent2D {
@@ -112,6 +285,36 @@ fn create_render_finished_semaphores(
     (0..count).map(|_| Semaphore::new(device)).collect()
 }
 
+fn create_pipeline(
+    device: &Device,
+    render_pass: vk::RenderPass,
+    extent: vk::Extent2D,
+    vert_shader: &ShaderModule,
+    frag_shader: &ShaderModule,
+    pipeline_layout: &GraphicsPipelineLayout,
+) -> Result<GraphicsPipeline, Error> {
+    let color_blend = ColorBlendState::new().with_attachment(
+        ColorBlendAttachmentState::new().with_color_write_mask(vk::ColorComponentFlags::RGBA),
+    );
+
+    GraphicsPipelineBuilder::new()
+        .with_shader_stage(ShaderStageDescriptor::new(
+            vk::ShaderStageFlags::VERTEX,
+            vert_shader,
+        ))
+        .with_shader_stage(ShaderStageDescriptor::new(
+            vk::ShaderStageFlags::FRAGMENT,
+            frag_shader,
+        ))
+        .with_render_pass(render_pass)
+        .with_layout(pipeline_layout.handle())
+        .with_vertex_input_state(TriangleVertex::descriptor())
+        .with_extent(extent.width, extent.height)
+        .with_rasterization_state(RasterizationState::new().with_cull_mode(vk::CullModeFlags::NONE))
+        .with_color_blend_state(color_blend)
+        .build(device)
+}
+
 impl Renderer {
     fn new(instance: Instance, window: &Window) -> Result<Self, Error> {
         let adapter = instance
@@ -160,6 +363,18 @@ impl Renderer {
         let render_pass = create_render_pass(&device, &swapchain)?;
         let framebuffers = build_framebuffers(&device, &swapchain, render_pass.handle())?;
 
+        let (vert_shader, frag_shader) = load_shaders(&device)?;
+        let pipeline_layout = GraphicsPipelineLayout::new(&device, &[], &[])?;
+        let pipeline = create_pipeline(
+            &device,
+            render_pass.handle(),
+            swapchain.extent(),
+            &vert_shader,
+            &frag_shader,
+            &pipeline_layout,
+        )?;
+        let vertex_buffer = VertexBuffer::new(&instance, &device, &TRIANGLE_VERTICES)?;
+
         let command_pool = CommandPool::new(&device)?;
         let mut command_buffers = command_pool.allocate_buffers(&device, 1)?;
         let command_buffer = command_buffers
@@ -178,6 +393,11 @@ impl Renderer {
             swapchain,
             render_pass,
             framebuffers,
+            pipeline_layout,
+            pipeline,
+            vert_shader,
+            frag_shader,
+            vertex_buffer,
             command_pool,
             command_buffer,
             extent_hint,
@@ -194,6 +414,8 @@ impl Renderer {
         for semaphore in self.render_finished.drain(..) {
             semaphore.destroy(&self.device);
         }
+
+        self.pipeline.destroy(&self.device);
         self.swapchain.destroy(&mut self.device);
 
         self.swapchain = Swapchain::new(
@@ -206,11 +428,19 @@ impl Renderer {
             build_framebuffers(&self.device, &self.swapchain, self.render_pass.handle())?;
         self.render_finished =
             create_render_finished_semaphores(&self.device, self.swapchain.images().len())?;
+        self.pipeline = create_pipeline(
+            &self.device,
+            self.render_pass.handle(),
+            self.swapchain.extent(),
+            &self.vert_shader,
+            &self.frag_shader,
+            &self.pipeline_layout,
+        )?;
         self.swapchain_outdated = false;
         Ok(())
     }
 
-    fn record_clear(&self, framebuffer: &Framebuffer) -> Result<(), Error> {
+    fn record_triangle(&self, framebuffer: &Framebuffer) -> Result<(), Error> {
         self.command_buffer
             .begin(&self.device, vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)?;
 
@@ -226,6 +456,12 @@ impl Renderer {
             framebuffer,
             &clear_values,
         );
+        self.command_buffer
+            .bind_graphics_pipeline(&self.device, self.pipeline.handle());
+        self.command_buffer
+            .bind_vertex_buffer(&self.device, self.vertex_buffer.buffer());
+        self.command_buffer
+            .draw(&self.device, TRIANGLE_VERTICES.len() as u32);
         self.command_buffer.end_render_pass(&self.device);
         self.command_buffer.end(&self.device)
     }
@@ -257,7 +493,7 @@ impl Renderer {
         }
         .map_err(vulkan_error)?;
 
-        self.record_clear(&self.framebuffers[image_index as usize])?;
+        self.record_triangle(&self.framebuffers[image_index as usize])?;
 
         let wait_semaphores = [self.image_available.handle()];
         let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -304,6 +540,12 @@ impl Renderer {
         }
         self.in_flight_fence.destroy(&self.device);
 
+        self.pipeline.destroy(&self.device);
+        self.pipeline_layout.destroy(&self.device);
+        self.vert_shader.destroy(&self.device);
+        self.frag_shader.destroy(&self.device);
+        self.vertex_buffer.destroy(&self.device);
+
         for framebuffer in self.framebuffers {
             framebuffer.destroy(&self.device);
         }
@@ -327,10 +569,8 @@ impl ApplicationHandler for App {
         if self.window.is_none() {
             let window = match event_loop.create_window(
                 Window::default_attributes()
-                    .with_title("Rotex")
-                    .with_inner_size(LogicalSize::new(800.0, 600.0))
-                    .with_decorations(true)
-                    .with_visible(true),
+                    .with_title("Rotex Triangle")
+                    .with_inner_size(LogicalSize::new(800.0, 600.0)),
             ) {
                 Ok(window) => window,
                 Err(error) => {
@@ -372,10 +612,7 @@ impl ApplicationHandler for App {
         }
 
         match event {
-            WindowEvent::CloseRequested => {
-                println!("The close button was pressed; stopping");
-                event_loop.exit();
-            }
+            WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 if let Some(renderer) = self.renderer.as_mut() {
                     renderer.extent_hint = vk::Extent2D {
