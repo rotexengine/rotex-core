@@ -4,6 +4,7 @@ use rotex_types::{
     ResourceBatchUpdate, SceneDescriptor, SurfaceDescriptor,
 };
 
+/// Platform-selected graphics backend wrapper.
 pub(crate) enum BackendBridge {
     #[cfg(not(target_arch = "wasm32"))]
     Vulkan(rotex_vulkan::VulkanBridge),
@@ -12,6 +13,11 @@ pub(crate) enum BackendBridge {
 }
 
 impl BackendBridge {
+    /// Creates the native backend for the current target architecture.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when backend initialization fails.
     pub(crate) async fn new(
         instance_descriptor: InstanceDescriptor,
         device_descriptor: DeviceDescriptor,
@@ -32,6 +38,11 @@ impl BackendBridge {
         }
     }
 
+    /// Forwards surface attachment to the active backend.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when surface creation or attachment fails.
     pub(crate) fn attach_surface(
         &mut self,
         surface_descriptor: SurfaceDescriptor,
@@ -44,6 +55,11 @@ impl BackendBridge {
         }
     }
 
+    /// Forwards resource creation to the active backend.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when resource allocation or upload fails.
     pub(crate) fn create_resources(
         &mut self,
         descriptor: ResourceBatchCreate,
@@ -56,6 +72,11 @@ impl BackendBridge {
         }
     }
 
+    /// Forwards resource updates to the active backend.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when a resource update fails.
     pub(crate) fn update_resources(
         &mut self,
         descriptor: ResourceBatchUpdate,
@@ -68,6 +89,11 @@ impl BackendBridge {
         }
     }
 
+    /// Forwards frame rendering to the active backend.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when rendering or presentation fails.
     pub(crate) fn render(
         &mut self,
         scene: &SceneDescriptor,
@@ -81,6 +107,11 @@ impl BackendBridge {
         }
     }
 
+    /// Forwards swapchain resize to the active backend.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when swapchain recreation fails.
     pub(crate) fn resize(&mut self, extent: Extent2D) -> Result<(), Error> {
         match self {
             #[cfg(not(target_arch = "wasm32"))]
@@ -90,6 +121,7 @@ impl BackendBridge {
         }
     }
 
+    /// Destroys the active backend and releases its resources.
     pub(crate) fn destroy(self) {
         match self {
             #[cfg(not(target_arch = "wasm32"))]

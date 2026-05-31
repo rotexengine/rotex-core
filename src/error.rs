@@ -1,11 +1,15 @@
 use thiserror::Error;
 
+/// How severely an error affects continued operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
+    /// The caller must stop or recover before proceeding.
     Fatal,
+    /// The caller may continue with degraded or partial results.
     Warning,
 }
 
+/// Specific failure reported by the graphics backend.
 #[derive(Error, Debug)]
 pub enum ErrorKind {
     #[error("No compatible physical device found")]
@@ -18,9 +22,12 @@ pub enum ErrorKind {
     Backend(String),
 }
 
+/// Backend error paired with its [`Severity`].
 #[derive(Debug)]
 pub struct Error {
+    /// The underlying failure.
     pub kind: ErrorKind,
+    /// Whether the failure is fatal or recoverable.
     pub severity: Severity,
 }
 
@@ -37,6 +44,7 @@ impl std::error::Error for Error {
 }
 
 impl Error {
+    /// Constructs an error with [`Severity::Fatal`].
     pub fn fatal(kind: ErrorKind) -> Self {
         Self {
             kind,
@@ -44,6 +52,7 @@ impl Error {
         }
     }
 
+    /// Constructs an error with [`Severity::Warning`].
     pub fn warning(kind: ErrorKind) -> Self {
         Self {
             kind,
