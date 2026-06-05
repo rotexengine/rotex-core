@@ -89,4 +89,3 @@ impl From<rotex_wgpu::Error> for Error {
         Self { kind, severity }
     }
 }
-

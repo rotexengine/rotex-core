@@ -1,11 +1,14 @@
 mod graphics_context;
 
 pub use graphics_context::GraphicsContext;
+pub use rotex_types::RenderCommand;
 pub use rotex_types::{
-    CameraDescriptor, CreatedResources, DeviceDescriptor, DeviceFeatures, Extent2D, FrameDescriptor,
-    IndexFormat, InstanceDescriptor, MaterialDescriptor, MaterialId, MeshDescriptor, MeshId,
-    MeshInstanceDescriptor, PassDescriptor, QueueCategory, QueueRequest, ResourceBatchCreate,
-    ResourceBatchUpdate, ResourceCreateDescriptor, ResourceHandle, ResourceUpdateDescriptor,
-    SceneDescriptor, SurfaceDescriptor, TextureDescriptor, TextureFormat, TextureId, VertexAttribute,
-    VertexBufferLayout, VertexFormat,
+    AccessType, BufferDescriptor, BufferId, BufferUsage, BufferUsageIntent, CameraDescriptor,
+    ColorAttachmentLoad, ComputeBindingLayout, ComputePassDescriptor, ComputePipelineDescriptor,
+    ComputePipelineId, CreatedResources, DepthAttachmentLoad, DeviceDescriptor, DeviceFeatures,
+    Extent2D, IndexFormat, InstanceDescriptor, MaterialDescriptor, MaterialId, MeshDescriptor,
+    MeshId, MeshInstanceDescriptor, PassColorTarget, PassDescriptor, QueueCategory, QueueRequest,
+    ResourceBatchCreate, ResourceBatchUpdate, ResourceCreateDescriptor, ResourceHandle,
+    ResourceUpdateDescriptor, SceneDescriptor, SurfaceDescriptor, TextureDescriptor, TextureFormat,
+    TextureId, TextureReadback, VertexAttribute, VertexBufferLayout, VertexFormat,
 };

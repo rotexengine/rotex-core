@@ -31,11 +31,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 }
 
-fn compile_shader(
-    path: &std::path::Path,
-    kind: ShaderKind,
-    out_path: &std::path::Path,
-) {
+fn compile_shader(path: &std::path::Path, kind: ShaderKind, out_path: &std::path::Path) {
     let source = fs::read_to_string(path)
         .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
 

@@ -1,8 +1,8 @@
 use rotex_core::{
-    CullMode, DeviceDescriptor, Extent2D, GraphicsContext, FrameDescriptor, IndexFormat, InstanceDescriptor,
+    CullMode, DeviceDescriptor, Extent2D, GraphicsContext, IndexFormat, InstanceDescriptor,
     MaterialDescriptor, MaterialId, MeshDescriptor, MeshId, MeshInstanceDescriptor, PassDescriptor,
-    ResourceBatchCreate, ResourceCreateDescriptor, ResourceHandle, SceneDescriptor, SurfaceDescriptor,
-    VertexAttribute, VertexBufferLayout, VertexFormat,
+    RenderCommand, ResourceBatchCreate, ResourceCreateDescriptor, ResourceHandle, SceneDescriptor,
+    SurfaceDescriptor, VertexAttribute, VertexBufferLayout, VertexFormat,
 };
 use winit::{
     application::ApplicationHandler,
@@ -18,7 +18,7 @@ struct App {
     window: Option<Window>,
     graphics_context: Option<GraphicsContext>,
     scene: Option<SceneDescriptor>,
-    frame: Option<FrameDescriptor>,
+    commands: Option<Vec<RenderCommand>>,
 }
 
 #[repr(C)]
@@ -51,17 +51,18 @@ impl ApplicationHandler for App {
         let mut instance_descriptor = InstanceDescriptor::default();
         #[cfg(not(target_arch = "wasm32"))]
         {
-            instance_descriptor.required_instance_extensions = ash_window::enumerate_required_extensions(
-                display_handle,
-            )
-            .expect("required instance extensions")
-            .iter()
-            .map(|extension| unsafe { std::ffi::CStr::from_ptr(*extension) })
-            .map(|extension| extension.to_string_lossy().into_owned())
-            .collect();
+            instance_descriptor.required_instance_extensions =
+                ash_window::enumerate_required_extensions(display_handle)
+                    .expect("required instance extensions")
+                    .iter()
+                    .map(|extension| unsafe { std::ffi::CStr::from_ptr(*extension) })
+                    .map(|extension| extension.to_string_lossy().into_owned())
+                    .collect();
         }
-        let mut graphics_context =
-            pollster::block_on(GraphicsContext::new(instance_descriptor, DeviceDescriptor::default()))
+        let mut graphics_context = pollster::block_on(GraphicsContext::new(
+            instance_descriptor,
+            DeviceDescriptor::default(),
+        ))
         .expect("triangle graphics_context");
         graphics_context
             .attach_surface(SurfaceDescriptor {
@@ -75,29 +76,35 @@ impl ApplicationHandler for App {
                 ResourceCreateDescriptor::Mesh(mesh_from_vertices(
                     &[
                         ColoredVertex {
-                            position: [0.0, -0.6, 0.0],
+                            position: [0.0, -0.6, 0.5],
                             color: [1.0, 0.2, 0.3],
                         },
                         ColoredVertex {
-                            position: [0.6, 0.6, 0.0],
+                            position: [0.6, 0.6, 0.5],
                             color: [0.2, 1.0, 0.3],
                         },
                         ColoredVertex {
-                            position: [-0.6, 0.6, 0.0],
+                            position: [-0.6, 0.6, 0.5],
                             color: [0.2, 0.4, 1.0],
                         },
                     ],
                     &[0, 1, 2],
                 )),
                 ResourceCreateDescriptor::Material(MaterialDescriptor {
-                    vertex_shader_spv: include_bytes!(concat!(env!("OUT_DIR"), "/triangle.vert.spv"))
-                        .to_vec(),
+                    vertex_shader_spv: include_bytes!(concat!(
+                        env!("OUT_DIR"),
+                        "/triangle.vert.spv"
+                    ))
+                    .to_vec(),
                     vertex_entry: "main".to_string(),
-                    fragment_shader_spv: include_bytes!(concat!(env!("OUT_DIR"), "/triangle.frag.spv"))
-                        .to_vec(),
+                    fragment_shader_spv: include_bytes!(concat!(
+                        env!("OUT_DIR"),
+                        "/triangle.frag.spv"
+                    ))
+                    .to_vec(),
                     fragment_entry: "main".to_string(),
                     enable_depth: false,
-                    cull_mode: CullMode::Back,
+                    cull_mode: CullMode::None,
                     texture: None,
                 }),
             ]))
@@ -105,15 +112,15 @@ impl ApplicationHandler for App {
         let mesh_id = expect_mesh(resources.handles[0]);
         let material_id = expect_material(resources.handles[1]);
         let scene = SceneDescriptor::new(vec![MeshInstanceDescriptor::new(mesh_id, material_id)]);
-        let frame = FrameDescriptor::new(vec![
+        let commands = vec![RenderCommand::DrawGraphics(
             PassDescriptor::new("main").with_clear_color([0.06, 0.06, 0.09, 1.0]),
-        ]);
+        )];
 
         window.request_redraw();
         self.window = Some(window);
         self.graphics_context = Some(graphics_context);
         self.scene = Some(scene);
-        self.frame = Some(frame);
+        self.commands = Some(commands);
     }
 
     fn window_event(
@@ -136,10 +143,12 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                if let (Some(graphics_context), Some(scene), Some(frame)) =
-                    (self.graphics_context.as_mut(), self.scene.as_ref(), self.frame.as_ref())
-                {
-                    if let Err(err) = graphics_context.render(scene, frame) {
+                if let (Some(graphics_context), Some(scene), Some(commands)) = (
+                    self.graphics_context.as_mut(),
+                    self.scene.as_ref(),
+                    self.commands.as_ref(),
+                ) {
+                    if let Err(err) = graphics_context.render(scene, commands) {
                         eprintln!("render failed: {err}");
                         event_loop.exit();
                     }

@@ -1,12 +1,15 @@
 use rotex_core::{
-    CullMode, DeviceDescriptor, Extent2D, FrameDescriptor, GraphicsContext, IndexFormat, InstanceDescriptor,
+    CullMode, DeviceDescriptor, Extent2D, GraphicsContext, IndexFormat, InstanceDescriptor,
     MaterialDescriptor, MaterialId, MeshDescriptor, MeshId, MeshInstanceDescriptor, PassDescriptor,
-    ResourceBatchCreate, ResourceBatchUpdate, ResourceCreateDescriptor, ResourceHandle, TextureDescriptor,
-    TextureFormat, TextureId,
-    ResourceUpdateDescriptor, SceneDescriptor, SurfaceDescriptor, VertexAttribute, VertexBufferLayout,
-    VertexFormat,
+    RenderCommand, ResourceBatchCreate, ResourceBatchUpdate, ResourceCreateDescriptor,
+    ResourceHandle, ResourceUpdateDescriptor, SceneDescriptor, SurfaceDescriptor,
+    TextureDescriptor, TextureFormat, TextureId, VertexAttribute, VertexBufferLayout, VertexFormat,
 };
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_futures::spawn_local;
 use web_time::Instant;
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
@@ -15,10 +18,6 @@ use winit::{
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
     window::{Window, WindowAttributes, WindowId},
 };
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_futures::spawn_local;
-#[cfg(target_arch = "wasm32")]
-use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -32,7 +31,7 @@ struct App {
     window: Option<Window>,
     graphics_context: Option<GraphicsContext>,
     scene: Option<SceneDescriptor>,
-    frame: Option<FrameDescriptor>,
+    commands: Option<Vec<RenderCommand>>,
     mesh_id: Option<MeshId>,
     base_positions: Vec<[f32; 3]>,
     colors: Vec<[f32; 3]>,
@@ -97,14 +96,15 @@ impl ApplicationHandler for App {
         #[cfg(not(target_arch = "wasm32"))]
         if self.graphics_context.is_none() {
             let mut desc = InstanceDescriptor::default();
-            let required_extensions = match ash_window::enumerate_required_extensions(display_handle) {
-                Ok(exts) => exts,
-                Err(err) => {
-                    eprintln!("failed to enumerate required instance extensions: {err}");
-                    event_loop.exit();
-                    return;
-                }
-            };
+            let required_extensions =
+                match ash_window::enumerate_required_extensions(display_handle) {
+                    Ok(exts) => exts,
+                    Err(err) => {
+                        eprintln!("failed to enumerate required instance extensions: {err}");
+                        event_loop.exit();
+                        return;
+                    }
+                };
             desc.required_instance_extensions = required_extensions
                 .iter()
                 .map(|extension| unsafe { std::ffi::CStr::from_ptr(*extension) })
@@ -126,10 +126,10 @@ impl ApplicationHandler for App {
             return;
         };
         if let Err(err) = graphics_context.attach_surface(SurfaceDescriptor {
-                display_handle,
-                window_handle,
-                extent: window_extent(&window),
-            }) {
+            display_handle,
+            window_handle,
+            extent: window_extent(&window),
+        }) {
             eprintln!("attach surface failed: {err}");
             event_loop.exit();
             return;
@@ -138,20 +138,21 @@ impl ApplicationHandler for App {
         let (positions, colors, indices) = cube_geometry();
         let initial_vertices = build_vertices(&positions, &colors, 0.0);
         let resources = match graphics_context.create_resources(ResourceBatchCreate::new(vec![
-                ResourceCreateDescriptor::Mesh(MeshDescriptor {
-                    vertex_data: vertices_as_bytes(&initial_vertices),
-                    vertex_layout: colored_vertex_layout(),
-                    index_data: indices_as_bytes(&indices),
-                    index_format: IndexFormat::Uint32,
-                    index_count: indices.len() as u32,
-                }),
-                ResourceCreateDescriptor::Texture(TextureDescriptor {
-                    width: 1,
-                    height: 1,
-                    format: TextureFormat::Rgba8Unorm,
-                    data: vec![255, 255, 255, 255],
-                }),
-            ])) {
+            ResourceCreateDescriptor::Mesh(MeshDescriptor {
+                vertex_data: vertices_as_bytes(&initial_vertices),
+                vertex_layout: colored_vertex_layout(),
+                index_data: indices_as_bytes(&indices),
+                index_format: IndexFormat::Uint32,
+                index_count: indices.len() as u32,
+            }),
+            ResourceCreateDescriptor::Texture(TextureDescriptor {
+                width: 1,
+                height: 1,
+                format: TextureFormat::Rgba8Unorm,
+                data: vec![255, 255, 255, 255],
+                render_attachment: false,
+            }),
+        ])) {
             Ok(resources) => resources,
             Err(err) => {
                 eprintln!("cube mesh/texture creation failed: {err}");
@@ -178,24 +179,27 @@ impl ApplicationHandler for App {
             return;
         };
 
-        let material_resources = match graphics_context.create_resources(ResourceBatchCreate::new(vec![
+        let material_resources =
+            match graphics_context.create_resources(ResourceBatchCreate::new(vec![
                 ResourceCreateDescriptor::Material(MaterialDescriptor {
-                    vertex_shader_spv: include_bytes!(concat!(env!("OUT_DIR"), "/cube.vert.spv")).to_vec(),
+                    vertex_shader_spv: include_bytes!(concat!(env!("OUT_DIR"), "/cube.vert.spv"))
+                        .to_vec(),
                     vertex_entry: "main".to_string(),
-                    fragment_shader_spv: include_bytes!(concat!(env!("OUT_DIR"), "/cube.frag.spv")).to_vec(),
+                    fragment_shader_spv: include_bytes!(concat!(env!("OUT_DIR"), "/cube.frag.spv"))
+                        .to_vec(),
                     fragment_entry: "main".to_string(),
                     enable_depth: true,
                     cull_mode: CullMode::Back,
                     texture: Some(texture_id),
                 }),
             ])) {
-            Ok(resources) => resources,
-            Err(err) => {
-                eprintln!("cube material creation failed: {err}");
-                event_loop.exit();
-                return;
-            }
-        };
+                Ok(resources) => resources,
+                Err(err) => {
+                    eprintln!("cube material creation failed: {err}");
+                    event_loop.exit();
+                    return;
+                }
+            };
         if material_resources.handles.is_empty() {
             eprintln!(
                 "cube material creation returned insufficient handles: {}",
@@ -210,17 +214,17 @@ impl ApplicationHandler for App {
             return;
         };
         let scene = SceneDescriptor::new(vec![MeshInstanceDescriptor::new(mesh_id, material_id)]);
-        let frame = FrameDescriptor::new(vec![
+        let commands = vec![RenderCommand::DrawGraphics(
             PassDescriptor::new("main")
                 .with_clear_color([0.02, 0.02, 0.04, 1.0])
                 .with_clear_depth(Some(1.0)),
-        ]);
+        )];
 
         window.request_redraw();
         self.window = Some(window);
         self.graphics_context = Some(graphics_context);
         self.scene = Some(scene);
-        self.frame = Some(frame);
+        self.commands = Some(commands);
         self.mesh_id = Some(mesh_id);
         self.base_positions = positions;
         self.colors = colors;
@@ -248,10 +252,16 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                if let (Some(graphics_context), Some(scene), Some(frame), Some(mesh_id), Some(start_time)) = (
+                if let (
+                    Some(graphics_context),
+                    Some(scene),
+                    Some(commands),
+                    Some(mesh_id),
+                    Some(start_time),
+                ) = (
                     self.graphics_context.as_mut(),
                     self.scene.as_ref(),
-                    self.frame.as_ref(),
+                    self.commands.as_ref(),
                     self.mesh_id,
                     self.start_time.as_ref(),
                 ) {
@@ -270,7 +280,7 @@ impl ApplicationHandler for App {
                         event_loop.exit();
                         return;
                     }
-                    if let Err(err) = graphics_context.render(scene, frame) {
+                    if let Err(err) = graphics_context.render(scene, commands) {
                         eprintln!("render failed: {err}");
                         event_loop.exit();
                     }
@@ -302,8 +312,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
     spawn_local(async move {
-        match GraphicsContext::new(InstanceDescriptor::default(), DeviceDescriptor::default()).await {
-            Ok(graphics_context) => event_loop.spawn_app(App::with_graphics_context(graphics_context)),
+        match GraphicsContext::new(InstanceDescriptor::default(), DeviceDescriptor::default()).await
+        {
+            Ok(graphics_context) => {
+                event_loop.spawn_app(App::with_graphics_context(graphics_context))
+            }
             Err(err) => eprintln!("cube graphics_context initialization failed: {err}"),
         }
     });
@@ -333,22 +346,21 @@ fn cube_geometry() -> (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<u32>) {
     ];
     let indices = vec![
         // back (-Z)
-        0, 2, 1, 2, 0, 3,
-        // front (+Z)
-        4, 5, 6, 6, 7, 4,
-        // left (-X)
-        0, 4, 7, 7, 3, 0,
-        // right (+X)
-        1, 6, 5, 6, 1, 2,
-        // top (+Y)
-        3, 6, 2, 6, 3, 7,
-        // bottom (-Y)
+        0, 2, 1, 2, 0, 3, // front (+Z)
+        4, 5, 6, 6, 7, 4, // left (-X)
+        0, 4, 7, 7, 3, 0, // right (+X)
+        1, 6, 5, 6, 1, 2, // top (+Y)
+        3, 6, 2, 6, 3, 7, // bottom (-Y)
         0, 1, 5, 5, 4, 0,
     ];
     (positions, colors, indices)
 }
 
-fn build_vertices(base_positions: &[[f32; 3]], colors: &[[f32; 3]], time: f32) -> Vec<ColoredVertex> {
+fn build_vertices(
+    base_positions: &[[f32; 3]],
+    colors: &[[f32; 3]],
+    time: f32,
+) -> Vec<ColoredVertex> {
     base_positions
         .iter()
         .zip(colors.iter())

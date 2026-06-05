@@ -39,18 +39,19 @@ impl ApplicationHandler for App {
         let mut instance_descriptor = InstanceDescriptor::default();
         #[cfg(not(target_arch = "wasm32"))]
         {
-            instance_descriptor.required_instance_extensions = ash_window::enumerate_required_extensions(
-                display_handle,
-            )
-            .expect("required instance extensions")
-            .iter()
-            .map(|extension| unsafe { std::ffi::CStr::from_ptr(*extension) })
-            .map(|extension| extension.to_string_lossy().into_owned())
-            .collect();
+            instance_descriptor.required_instance_extensions =
+                ash_window::enumerate_required_extensions(display_handle)
+                    .expect("required instance extensions")
+                    .iter()
+                    .map(|extension| unsafe { std::ffi::CStr::from_ptr(*extension) })
+                    .map(|extension| extension.to_string_lossy().into_owned())
+                    .collect();
         }
-        let mut graphics_context =
-            pollster::block_on(GraphicsContext::new(instance_descriptor, DeviceDescriptor::default()))
-                .expect("frontend graphics_context");
+        let mut graphics_context = pollster::block_on(GraphicsContext::new(
+            instance_descriptor,
+            DeviceDescriptor::default(),
+        ))
+        .expect("frontend graphics_context");
         graphics_context
             .attach_surface(SurfaceDescriptor {
                 display_handle,

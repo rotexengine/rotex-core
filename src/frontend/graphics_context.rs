@@ -1,10 +1,9 @@
-// rotex_core/src/renderer.rs (Formerly graphics_context.rs)
-
-use crate::error::Error;
 use crate::bridge::BackendBridge;
+use crate::error::Error;
 use rotex_types::{
-    CreatedResources, DeviceDescriptor, Extent2D, FrameDescriptor, InstanceDescriptor, ResourceBatchCreate,
-    ResourceBatchUpdate, SceneDescriptor, SurfaceDescriptor,
+    CreatedResources, DeviceDescriptor, Extent2D, InstanceDescriptor, RenderCommand,
+    ResourceBatchCreate, ResourceBatchUpdate, SceneDescriptor, SurfaceDescriptor, TextureId,
+    TextureReadback,
 };
 
 pub struct GraphicsContext {
@@ -39,13 +38,17 @@ impl GraphicsContext {
     pub fn render(
         &mut self,
         scene_descriptor: &SceneDescriptor,
-        frame_descriptor: &FrameDescriptor,
+        commands: &[RenderCommand],
     ) -> Result<(), Error> {
-        self.backend.render(scene_descriptor, frame_descriptor)
+        self.backend.execute(scene_descriptor, commands)
     }
 
     pub fn resize(&mut self, extent: Extent2D) -> Result<(), Error> {
         self.backend.resize(extent)
+    }
+
+    pub fn read_texture(&mut self, id: TextureId) -> Result<TextureReadback, Error> {
+        self.backend.read_texture(id)
     }
 
     pub fn destroy(self) {

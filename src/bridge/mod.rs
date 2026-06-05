@@ -1,7 +1,8 @@
 use crate::error::Error;
+use rotex_types::RenderCommand;
 use rotex_types::{
-    CreatedResources, DeviceDescriptor, Extent2D, FrameDescriptor, InstanceDescriptor, ResourceBatchCreate,
-    ResourceBatchUpdate, SceneDescriptor, SurfaceDescriptor,
+    CreatedResources, DeviceDescriptor, Extent2D, InstanceDescriptor, ResourceBatchCreate,
+    ResourceBatchUpdate, SceneDescriptor, SurfaceDescriptor, TextureId, TextureReadback,
 };
 
 pub(crate) enum BackendBridge {
@@ -38,9 +39,13 @@ impl BackendBridge {
     ) -> Result<(), Error> {
         match self {
             #[cfg(not(target_arch = "wasm32"))]
-            BackendBridge::Vulkan(bridge) => bridge.attach_surface(surface_descriptor).map_err(Into::into),
+            BackendBridge::Vulkan(bridge) => bridge
+                .attach_surface(surface_descriptor)
+                .map_err(Into::into),
             #[cfg(target_arch = "wasm32")]
-            BackendBridge::Wgpu(bridge) => bridge.attach_surface(surface_descriptor).map_err(Into::into),
+            BackendBridge::Wgpu(bridge) => bridge
+                .attach_surface(surface_descriptor)
+                .map_err(Into::into),
         }
     }
 
@@ -50,7 +55,9 @@ impl BackendBridge {
     ) -> Result<CreatedResources, Error> {
         match self {
             #[cfg(not(target_arch = "wasm32"))]
-            BackendBridge::Vulkan(bridge) => bridge.create_resources(descriptor).map_err(Into::into),
+            BackendBridge::Vulkan(bridge) => {
+                bridge.create_resources(descriptor).map_err(Into::into)
+            }
             #[cfg(target_arch = "wasm32")]
             BackendBridge::Wgpu(bridge) => bridge.create_resources(descriptor).map_err(Into::into),
         }
@@ -62,22 +69,24 @@ impl BackendBridge {
     ) -> Result<(), Error> {
         match self {
             #[cfg(not(target_arch = "wasm32"))]
-            BackendBridge::Vulkan(bridge) => bridge.update_resources(descriptor).map_err(Into::into),
+            BackendBridge::Vulkan(bridge) => {
+                bridge.update_resources(descriptor).map_err(Into::into)
+            }
             #[cfg(target_arch = "wasm32")]
             BackendBridge::Wgpu(bridge) => bridge.update_resources(descriptor).map_err(Into::into),
         }
     }
 
-    pub(crate) fn render(
+    pub(crate) fn execute(
         &mut self,
         scene: &SceneDescriptor,
-        frame: &FrameDescriptor,
+        commands: &[RenderCommand],
     ) -> Result<(), Error> {
         match self {
             #[cfg(not(target_arch = "wasm32"))]
-            BackendBridge::Vulkan(bridge) => bridge.render(scene, frame).map_err(Into::into),
+            BackendBridge::Vulkan(bridge) => bridge.execute(scene, commands).map_err(Into::into),
             #[cfg(target_arch = "wasm32")]
-            BackendBridge::Wgpu(bridge) => bridge.render(scene, frame).map_err(Into::into),
+            BackendBridge::Wgpu(bridge) => bridge.execute(scene, commands).map_err(Into::into),
         }
     }
 
@@ -87,6 +96,15 @@ impl BackendBridge {
             BackendBridge::Vulkan(bridge) => bridge.resize(extent).map_err(Into::into),
             #[cfg(target_arch = "wasm32")]
             BackendBridge::Wgpu(bridge) => bridge.resize(extent).map_err(Into::into),
+        }
+    }
+
+    pub(crate) fn read_texture(&mut self, id: TextureId) -> Result<TextureReadback, Error> {
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            BackendBridge::Vulkan(bridge) => bridge.read_texture(id).map_err(Into::into),
+            #[cfg(target_arch = "wasm32")]
+            BackendBridge::Wgpu(bridge) => bridge.read_texture(id).map_err(Into::into),
         }
     }
 
