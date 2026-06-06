@@ -4,7 +4,7 @@ use rotex_types::{
     SceneDescriptor, SurfaceDescriptor, TextureId, TextureReadback,
 };
 
-pub trait RenderBackend {
+pub trait GpuBackend {
     fn attach_surface(&mut self, surface_descriptor: SurfaceDescriptor) -> Result<(), Error>;
 
     fn create_resources(

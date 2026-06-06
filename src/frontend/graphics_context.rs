@@ -1,4 +1,4 @@
-use crate::backend::RenderBackend;
+use crate::backend::GpuBackend;
 use crate::error::Error;
 use rotex_types::{
     CreatedResources, Extent2D, RenderCommand, ResourceBatchCreate, ResourceBatchUpdate,
@@ -6,11 +6,11 @@ use rotex_types::{
 };
 
 pub struct GraphicsContext {
-    backend: Box<dyn RenderBackend>,
+    backend: Box<dyn GpuBackend>,
 }
 
 impl GraphicsContext {
-    pub fn new(backend: Box<dyn RenderBackend>) -> Self {
+    pub fn new(backend: Box<dyn GpuBackend>) -> Self {
         Self { backend }
     }
 

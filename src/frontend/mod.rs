@@ -1,6 +1,6 @@
 mod graphics_context;
 
-pub use crate::backend::RenderBackend;
+pub use crate::backend::GpuBackend;
 pub use graphics_context::GraphicsContext;
 pub use rotex_types::RenderCommand;
 pub use rotex_types::{
