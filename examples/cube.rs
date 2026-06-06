@@ -1,3 +1,4 @@
+#[cfg(not(target_arch = "wasm32"))]
 use rotex_core::{
     CullMode, DeviceDescriptor, Extent2D, GraphicsContext, IndexFormat, InstanceDescriptor,
     MaterialDescriptor, MaterialId, MeshDescriptor, MeshId, MeshInstanceDescriptor, PassDescriptor,
@@ -5,20 +6,14 @@ use rotex_core::{
     ResourceHandle, ResourceUpdateDescriptor, SceneDescriptor, SurfaceDescriptor,
     TextureDescriptor, TextureFormat, TextureId, VertexAttribute, VertexBufferLayout, VertexFormat,
 };
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_futures::spawn_local;
-use web_time::Instant;
-#[cfg(target_arch = "wasm32")]
-use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
-use winit::{
-    application::ApplicationHandler,
-    dpi::LogicalSize,
-    event::WindowEvent,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    raw_window_handle::{HasDisplayHandle, HasWindowHandle},
-    window::{Window, WindowAttributes, WindowId},
-};
+#[cfg(not(target_arch = "wasm32"))]
+use rotex_vulkan::VulkanBridge;
+#[cfg(not(target_arch = "wasm32"))]
+use rotex_window::{EngineApp, EngineEvent, WindowBridge, WindowDescriptor, WindowOrchestrator};
+#[cfg(not(target_arch = "wasm32"))]
+use rotex_winit::WinitBackend;
 
+#[cfg(not(target_arch = "wasm32"))]
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct ColoredVertex {
@@ -26,9 +21,9 @@ struct ColoredVertex {
     color: [f32; 3],
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Default)]
 struct App {
-    window: Option<Window>,
     graphics_context: Option<GraphicsContext>,
     scene: Option<SceneDescriptor>,
     commands: Option<Vec<RenderCommand>>,
@@ -36,237 +31,150 @@ struct App {
     base_positions: Vec<[f32; 3]>,
     colors: Vec<[f32; 3]>,
     indices: Vec<u32>,
-    start_time: Option<Instant>,
+    elapsed_time: f32,
 }
 
-impl App {
-    #[cfg(target_arch = "wasm32")]
-    fn with_graphics_context(graphics_context: GraphicsContext) -> Self {
-        Self {
-            graphics_context: Some(graphics_context),
-            ..Default::default()
-        }
-    }
-}
-
-fn window_extent(window: &Window) -> Extent2D {
-    let size = window.inner_size();
-    Extent2D {
-        width: size.width.max(1),
-        height: size.height.max(1),
-    }
-}
-
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
-            return;
-        }
-
-        let attrs = WindowAttributes::default()
-            .with_title("Rotex Frontend Cube")
-            .with_inner_size(LogicalSize::new(900.0, 700.0));
-        #[cfg(target_arch = "wasm32")]
-        let attrs = attrs.with_append(true);
-        let window = match event_loop.create_window(attrs) {
-            Ok(window) => window,
-            Err(err) => {
-                eprintln!("window creation failed: {err}");
-                event_loop.exit();
-                return;
-            }
-        };
-        let display_handle = match window.display_handle() {
-            Ok(handle) => handle.as_raw(),
-            Err(err) => {
-                eprintln!("display handle unavailable: {err}");
-                event_loop.exit();
-                return;
-            }
-        };
-        let window_handle = match window.window_handle() {
-            Ok(handle) => handle.as_raw(),
-            Err(err) => {
-                eprintln!("window handle unavailable: {err}");
-                event_loop.exit();
-                return;
-            }
-        };
-
-        #[cfg(not(target_arch = "wasm32"))]
-        if self.graphics_context.is_none() {
-            let mut desc = InstanceDescriptor::default();
-            let required_extensions =
-                match ash_window::enumerate_required_extensions(display_handle) {
-                    Ok(exts) => exts,
+#[cfg(not(target_arch = "wasm32"))]
+impl EngineApp for App {
+    fn on_event(&mut self, event: EngineEvent, window: &dyn WindowBridge) {
+        match event {
+            EngineEvent::Init => {
+                let display_handle = match window.display_handle() {
+                    Ok(handle) => handle.as_raw(),
                     Err(err) => {
-                        eprintln!("failed to enumerate required instance extensions: {err}");
-                        event_loop.exit();
+                        eprintln!("display handle unavailable: {err}");
                         return;
                     }
                 };
-            desc.required_instance_extensions = required_extensions
-                .iter()
-                .map(|extension| unsafe { std::ffi::CStr::from_ptr(*extension) })
-                .map(|extension| extension.to_string_lossy().into_owned())
-                .collect();
-            match pollster::block_on(GraphicsContext::new(desc, DeviceDescriptor::default())) {
-                Ok(graphics_context) => self.graphics_context = Some(graphics_context),
-                Err(err) => {
-                    eprintln!("cube graphics_context initialization failed: {err}");
-                    event_loop.exit();
-                    return;
-                }
-            }
-        }
-
-        let Some(mut graphics_context) = self.graphics_context.take() else {
-            eprintln!("cube graphics_context missing during resume");
-            event_loop.exit();
-            return;
-        };
-        if let Err(err) = graphics_context.attach_surface(SurfaceDescriptor {
-            display_handle,
-            window_handle,
-            extent: window_extent(&window),
-        }) {
-            eprintln!("attach surface failed: {err}");
-            event_loop.exit();
-            return;
-        }
-
-        let (positions, colors, indices) = cube_geometry();
-        let initial_vertices = build_vertices(&positions, &colors, 0.0);
-        let resources = match graphics_context.create_resources(ResourceBatchCreate::new(vec![
-            ResourceCreateDescriptor::Mesh(MeshDescriptor {
-                vertex_data: vertices_as_bytes(&initial_vertices),
-                vertex_layout: colored_vertex_layout(),
-                index_data: indices_as_bytes(&indices),
-                index_format: IndexFormat::Uint32,
-                index_count: indices.len() as u32,
-            }),
-            ResourceCreateDescriptor::Texture(TextureDescriptor {
-                width: 1,
-                height: 1,
-                format: TextureFormat::Rgba8Unorm,
-                data: vec![255, 255, 255, 255],
-                render_attachment: false,
-            }),
-        ])) {
-            Ok(resources) => resources,
-            Err(err) => {
-                eprintln!("cube mesh/texture creation failed: {err}");
-                event_loop.exit();
-                return;
-            }
-        };
-        if resources.handles.len() < 2 {
-            eprintln!(
-                "cube mesh/texture creation returned insufficient handles: {}",
-                resources.handles.len()
-            );
-            event_loop.exit();
-            return;
-        }
-        let Some(mesh_id) = expect_mesh(resources.handles[0]) else {
-            eprintln!("expected mesh handle at resources[0]");
-            event_loop.exit();
-            return;
-        };
-        let Some(texture_id) = expect_texture(resources.handles[1]) else {
-            eprintln!("expected texture handle at resources[1]");
-            event_loop.exit();
-            return;
-        };
-
-        let material_resources =
-            match graphics_context.create_resources(ResourceBatchCreate::new(vec![
-                ResourceCreateDescriptor::Material(MaterialDescriptor {
-                    vertex_shader_spv: include_bytes!(concat!(env!("OUT_DIR"), "/cube.vert.spv"))
-                        .to_vec(),
-                    vertex_entry: "main".to_string(),
-                    fragment_shader_spv: include_bytes!(concat!(env!("OUT_DIR"), "/cube.frag.spv"))
-                        .to_vec(),
-                    fragment_entry: "main".to_string(),
-                    enable_depth: true,
-                    cull_mode: CullMode::Back,
-                    texture: Some(texture_id),
-                }),
-            ])) {
-                Ok(resources) => resources,
-                Err(err) => {
-                    eprintln!("cube material creation failed: {err}");
-                    event_loop.exit();
-                    return;
-                }
-            };
-        if material_resources.handles.is_empty() {
-            eprintln!(
-                "cube material creation returned insufficient handles: {}",
-                material_resources.handles.len()
-            );
-            event_loop.exit();
-            return;
-        }
-        let Some(material_id) = expect_material(material_resources.handles[0]) else {
-            eprintln!("expected material handle at material_resources[0]");
-            event_loop.exit();
-            return;
-        };
-        let scene = SceneDescriptor::new(vec![MeshInstanceDescriptor::new(mesh_id, material_id)]);
-        let commands = vec![RenderCommand::DrawGraphics(
-            PassDescriptor::new("main")
-                .with_clear_color([0.02, 0.02, 0.04, 1.0])
-                .with_clear_depth(Some(1.0)),
-        )];
-
-        window.request_redraw();
-        self.window = Some(window);
-        self.graphics_context = Some(graphics_context);
-        self.scene = Some(scene);
-        self.commands = Some(commands);
-        self.mesh_id = Some(mesh_id);
-        self.base_positions = positions;
-        self.colors = colors;
-        self.indices = indices;
-        self.start_time = Some(Instant::now());
-    }
-
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
-        event: WindowEvent,
-    ) {
-        match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => {
-                if let Some(graphics_context) = self.graphics_context.as_mut() {
-                    if let Err(err) = graphics_context.resize(Extent2D {
-                        width: size.width.max(1),
-                        height: size.height.max(1),
-                    }) {
-                        eprintln!("resize failed: {err}");
-                        event_loop.exit();
+                let window_handle = match window.window_handle() {
+                    Ok(handle) => handle.as_raw(),
+                    Err(err) => {
+                        eprintln!("window handle unavailable: {err}");
+                        return;
                     }
+                };
+
+                let mut instance_descriptor = InstanceDescriptor::default();
+                instance_descriptor.required_instance_extensions =
+                    match ash_window::enumerate_required_extensions(display_handle) {
+                        Ok(extensions) => extensions
+                            .iter()
+                            .map(|extension| unsafe { std::ffi::CStr::from_ptr(*extension) })
+                            .map(|extension| extension.to_string_lossy().into_owned())
+                            .collect(),
+                        Err(err) => {
+                            eprintln!("failed to enumerate required instance extensions: {err}");
+                            return;
+                        }
+                    };
+                let backend =
+                    match VulkanBridge::new(instance_descriptor, DeviceDescriptor::default()) {
+                        Ok(backend) => backend,
+                        Err(err) => {
+                            eprintln!("cube backend initialization failed: {err}");
+                            return;
+                        }
+                    };
+                let mut graphics_context = GraphicsContext::new(Box::new(backend));
+                let (width, height) = window.extent();
+                if let Err(err) = graphics_context.attach_surface(SurfaceDescriptor {
+                    display_handle,
+                    window_handle,
+                    extent: Extent2D { width, height },
+                }) {
+                    eprintln!("attach surface failed: {err}");
+                    return;
                 }
+
+                let (positions, colors, indices) = cube_geometry();
+                let initial_vertices = build_vertices(&positions, &colors, 0.0);
+                let resources =
+                    match graphics_context.create_resources(ResourceBatchCreate::new(vec![
+                        ResourceCreateDescriptor::Mesh(MeshDescriptor {
+                            vertex_data: vertices_as_bytes(&initial_vertices),
+                            vertex_layout: colored_vertex_layout(),
+                            index_data: indices_as_bytes(&indices),
+                            index_format: IndexFormat::Uint32,
+                            index_count: indices.len() as u32,
+                        }),
+                        ResourceCreateDescriptor::Texture(TextureDescriptor {
+                            width: 1,
+                            height: 1,
+                            format: TextureFormat::Rgba8Unorm,
+                            data: vec![255, 255, 255, 255],
+                            render_attachment: false,
+                        }),
+                    ])) {
+                        Ok(resources) => resources,
+                        Err(err) => {
+                            eprintln!("cube mesh/texture creation failed: {err}");
+                            return;
+                        }
+                    };
+                let Some(mesh_id) = expect_mesh(resources.handles[0]) else {
+                    eprintln!("expected mesh handle at resources[0]");
+                    return;
+                };
+                let Some(texture_id) = expect_texture(resources.handles[1]) else {
+                    eprintln!("expected texture handle at resources[1]");
+                    return;
+                };
+
+                let material_resources =
+                    match graphics_context.create_resources(ResourceBatchCreate::new(vec![
+                        ResourceCreateDescriptor::Material(MaterialDescriptor {
+                            vertex_shader_spv: include_bytes!(concat!(
+                                env!("OUT_DIR"),
+                                "/cube.vert.spv"
+                            ))
+                            .to_vec(),
+                            vertex_entry: "main".to_string(),
+                            fragment_shader_spv: include_bytes!(concat!(
+                                env!("OUT_DIR"),
+                                "/cube.frag.spv"
+                            ))
+                            .to_vec(),
+                            fragment_entry: "main".to_string(),
+                            enable_depth: true,
+                            cull_mode: CullMode::Back,
+                            texture: Some(texture_id),
+                        }),
+                    ])) {
+                        Ok(resources) => resources,
+                        Err(err) => {
+                            eprintln!("cube material creation failed: {err}");
+                            return;
+                        }
+                    };
+                let Some(material_id) = expect_material(material_resources.handles[0]) else {
+                    eprintln!("expected material handle at material_resources[0]");
+                    return;
+                };
+
+                let scene =
+                    SceneDescriptor::new(vec![MeshInstanceDescriptor::new(mesh_id, material_id)]);
+                let commands = vec![RenderCommand::DrawGraphics(
+                    PassDescriptor::new("main")
+                        .with_clear_color([0.02, 0.02, 0.04, 1.0])
+                        .with_clear_depth(Some(1.0)),
+                )];
+
+                self.graphics_context = Some(graphics_context);
+                self.scene = Some(scene);
+                self.commands = Some(commands);
+                self.mesh_id = Some(mesh_id);
+                self.base_positions = positions;
+                self.colors = colors;
+                self.indices = indices;
+                self.elapsed_time = 0.0;
             }
-            WindowEvent::RedrawRequested => {
-                if let (
-                    Some(graphics_context),
-                    Some(scene),
-                    Some(commands),
-                    Some(mesh_id),
-                    Some(start_time),
-                ) = (
-                    self.graphics_context.as_mut(),
-                    self.scene.as_ref(),
-                    self.commands.as_ref(),
-                    self.mesh_id,
-                    self.start_time.as_ref(),
-                ) {
-                    let t = start_time.elapsed().as_secs_f32();
-                    let vertices = build_vertices(&self.base_positions, &self.colors, t);
+            EngineEvent::Update(delta_time) => {
+                self.elapsed_time += delta_time;
+                if let (Some(graphics_context), Some(mesh_id)) =
+                    (self.graphics_context.as_mut(), self.mesh_id)
+                {
+                    let vertices =
+                        build_vertices(&self.base_positions, &self.colors, self.elapsed_time);
                     let update = ResourceBatchUpdate::new(vec![ResourceUpdateDescriptor::Mesh {
                         id: mesh_id,
                         vertex_data: vertices_as_bytes(&vertices),
@@ -277,16 +185,30 @@ impl ApplicationHandler for App {
                     }]);
                     if let Err(err) = graphics_context.update_resources(update) {
                         eprintln!("resource update failed: {err}");
-                        event_loop.exit();
-                        return;
-                    }
-                    if let Err(err) = graphics_context.render(scene, commands) {
-                        eprintln!("render failed: {err}");
-                        event_loop.exit();
                     }
                 }
-                if let Some(window) = self.window.as_ref() {
-                    window.request_redraw();
+            }
+            EngineEvent::Render => {
+                if let (Some(graphics_context), Some(scene), Some(commands)) = (
+                    self.graphics_context.as_mut(),
+                    self.scene.as_ref(),
+                    self.commands.as_ref(),
+                ) {
+                    if let Err(err) = graphics_context.render(scene, commands) {
+                        eprintln!("render failed: {err}");
+                    }
+                }
+            }
+            EngineEvent::Resized(width, height) => {
+                if let Some(graphics_context) = self.graphics_context.as_mut() {
+                    if let Err(err) = graphics_context.resize(Extent2D { width, height }) {
+                        eprintln!("resize failed: {err}");
+                    }
+                }
+            }
+            EngineEvent::CloseRequested => {
+                if let Some(graphics_context) = self.graphics_context.take() {
+                    graphics_context.destroy();
                 }
             }
             _ => {}
@@ -296,33 +218,23 @@ impl ApplicationHandler for App {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let event_loop = EventLoop::new()?;
-    event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = App::default();
-    event_loop.run_app(&mut app)?;
-
-    if let Some(graphics_context) = app.graphics_context.take() {
-        graphics_context.destroy();
-    }
+    let descriptor = WindowDescriptor {
+        title: "Rotex Frontend Cube".to_string(),
+        width: 900,
+        height: 700,
+        ..Default::default()
+    };
+    let orchestrator = WindowOrchestrator::new(Box::new(WinitBackend));
+    orchestrator.run(descriptor, Box::new(App::default()))?;
     Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let event_loop = EventLoop::new()?;
-    event_loop.set_control_flow(ControlFlow::Poll);
-    spawn_local(async move {
-        match GraphicsContext::new(InstanceDescriptor::default(), DeviceDescriptor::default()).await
-        {
-            Ok(graphics_context) => {
-                event_loop.spawn_app(App::with_graphics_context(graphics_context))
-            }
-            Err(err) => eprintln!("cube graphics_context initialization failed: {err}"),
-        }
-    });
-    Ok(())
+fn main() {
+    eprintln!("cube example is only available on native targets.");
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn cube_geometry() -> (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<u32>) {
     let positions = vec![
         [-0.6, -0.6, -0.6],
@@ -356,6 +268,7 @@ fn cube_geometry() -> (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<u32>) {
     (positions, colors, indices)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn build_vertices(
     base_positions: &[[f32; 3]],
     colors: &[[f32; 3]],
@@ -375,6 +288,7 @@ fn build_vertices(
         .collect()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn rotate_vertex(position: &mut [f32; 3], time: f32) {
     let angle_y = time;
     let angle_x = time * 0.7;
@@ -391,6 +305,7 @@ fn rotate_vertex(position: &mut [f32; 3], time: f32) {
     position[2] = (z2 * 0.45) + 0.5;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn expect_mesh(handle: ResourceHandle) -> Option<MeshId> {
     match handle {
         ResourceHandle::Mesh(id) => Some(id),
@@ -398,6 +313,7 @@ fn expect_mesh(handle: ResourceHandle) -> Option<MeshId> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn expect_material(handle: ResourceHandle) -> Option<MaterialId> {
     match handle {
         ResourceHandle::Material(id) => Some(id),
@@ -405,6 +321,7 @@ fn expect_material(handle: ResourceHandle) -> Option<MaterialId> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn expect_texture(handle: ResourceHandle) -> Option<TextureId> {
     match handle {
         ResourceHandle::Texture(id) => Some(id),
@@ -412,6 +329,7 @@ fn expect_texture(handle: ResourceHandle) -> Option<TextureId> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn colored_vertex_layout() -> VertexBufferLayout {
     VertexBufferLayout {
         array_stride: 24,
@@ -430,6 +348,7 @@ fn colored_vertex_layout() -> VertexBufferLayout {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn vertices_as_bytes(vertices: &[ColoredVertex]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(vertices.len() * 24);
     for vertex in vertices {
@@ -443,6 +362,7 @@ fn vertices_as_bytes(vertices: &[ColoredVertex]) -> Vec<u8> {
     bytes
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn indices_as_bytes(indices: &[u32]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(indices.len() * 4);
     for index in indices {

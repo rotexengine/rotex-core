@@ -13,6 +13,7 @@ use rotex_core::{
     ResourceHandle, SceneDescriptor, TextureDescriptor, TextureFormat, TextureId, VertexAttribute,
     VertexBufferLayout, VertexFormat,
 };
+use rotex_vulkan::VulkanBridge;
 
 #[cfg(not(target_arch = "wasm32"))]
 const OUTPUT_WIDTH: u32 = 1024;
@@ -33,10 +34,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut device_descriptor = DeviceDescriptor::default();
     device_descriptor.enable_swapchain = false;
 
-    let mut graphics_context = pollster::block_on(GraphicsContext::new(
-        InstanceDescriptor::default(),
-        device_descriptor,
-    ))?;
+    let backend = VulkanBridge::new(InstanceDescriptor::default(), device_descriptor)?;
+    let mut graphics_context = GraphicsContext::new(Box::new(backend));
 
     let (positions, colors, indices) = cube_geometry();
     let vertices = build_vertices(&positions, &colors, 0.9);

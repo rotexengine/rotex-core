@@ -1,23 +1,17 @@
-use crate::bridge::BackendBridge;
+use crate::backend::RenderBackend;
 use crate::error::Error;
 use rotex_types::{
-    CreatedResources, DeviceDescriptor, Extent2D, InstanceDescriptor, RenderCommand,
-    ResourceBatchCreate, ResourceBatchUpdate, SceneDescriptor, SurfaceDescriptor, TextureId,
-    TextureReadback,
+    CreatedResources, Extent2D, RenderCommand, ResourceBatchCreate, ResourceBatchUpdate,
+    SceneDescriptor, SurfaceDescriptor, TextureId, TextureReadback,
 };
 
 pub struct GraphicsContext {
-    backend: BackendBridge,
+    backend: Box<dyn RenderBackend>,
 }
 
 impl GraphicsContext {
-    pub async fn new(
-        instance_descriptor: InstanceDescriptor,
-        device_descriptor: DeviceDescriptor,
-    ) -> Result<Self, Error> {
-        Ok(Self {
-            backend: BackendBridge::new(instance_descriptor, device_descriptor).await?,
-        })
+    pub fn new(backend: Box<dyn RenderBackend>) -> Self {
+        Self { backend }
     }
 
     pub fn attach_surface(&mut self, surface_descriptor: SurfaceDescriptor) -> Result<(), Error> {

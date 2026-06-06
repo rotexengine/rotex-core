@@ -1,89 +1,103 @@
+#[cfg(not(target_arch = "wasm32"))]
 use rotex_core::{
     DeviceDescriptor, Extent2D, GraphicsContext, InstanceDescriptor, SurfaceDescriptor,
 };
-use winit::{
-    application::ApplicationHandler,
-    dpi::LogicalSize,
-    event::WindowEvent,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    raw_window_handle::{HasDisplayHandle, HasWindowHandle},
-    window::{Window, WindowAttributes, WindowId},
-};
+#[cfg(not(target_arch = "wasm32"))]
+use rotex_vulkan::VulkanBridge;
+#[cfg(not(target_arch = "wasm32"))]
+use rotex_window::{EngineApp, EngineEvent, WindowBridge, WindowDescriptor, WindowOrchestrator};
+#[cfg(not(target_arch = "wasm32"))]
+use rotex_winit::WinitBackend;
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Default)]
 struct App {
-    window: Option<Window>,
     graphics_context: Option<GraphicsContext>,
 }
 
-fn window_extent(window: &Window) -> Extent2D {
-    let size = window.inner_size();
-    Extent2D {
-        width: size.width.max(1),
-        height: size.height.max(1),
+#[cfg(not(target_arch = "wasm32"))]
+impl EngineApp for App {
+    fn on_event(&mut self, event: EngineEvent, window: &dyn WindowBridge) {
+        match event {
+            EngineEvent::Init => {
+                let display_handle = match window.display_handle() {
+                    Ok(handle) => handle.as_raw(),
+                    Err(err) => {
+                        eprintln!("display handle unavailable: {err}");
+                        return;
+                    }
+                };
+                let window_handle = match window.window_handle() {
+                    Ok(handle) => handle.as_raw(),
+                    Err(err) => {
+                        eprintln!("window handle unavailable: {err}");
+                        return;
+                    }
+                };
+                let mut instance_descriptor = InstanceDescriptor::default();
+                instance_descriptor.required_instance_extensions =
+                    match ash_window::enumerate_required_extensions(display_handle) {
+                        Ok(extensions) => extensions
+                            .iter()
+                            .map(|extension| unsafe { std::ffi::CStr::from_ptr(*extension) })
+                            .map(|extension| extension.to_string_lossy().into_owned())
+                            .collect(),
+                        Err(err) => {
+                            eprintln!("failed to enumerate required instance extensions: {err}");
+                            return;
+                        }
+                    };
+                let backend =
+                    match VulkanBridge::new(instance_descriptor, DeviceDescriptor::default()) {
+                        Ok(backend) => backend,
+                        Err(err) => {
+                            eprintln!("frontend backend initialization failed: {err}");
+                            return;
+                        }
+                    };
+                let mut graphics_context = GraphicsContext::new(Box::new(backend));
+                let (width, height) = window.extent();
+                if let Err(err) = graphics_context.attach_surface(SurfaceDescriptor {
+                    display_handle,
+                    window_handle,
+                    extent: Extent2D { width, height },
+                }) {
+                    eprintln!("attach surface failed: {err}");
+                    return;
+                }
+                self.graphics_context = Some(graphics_context);
+            }
+            EngineEvent::Resized(width, height) => {
+                if let Some(graphics_context) = self.graphics_context.as_mut() {
+                    if let Err(err) = graphics_context.resize(Extent2D { width, height }) {
+                        eprintln!("resize failed: {err}");
+                    }
+                }
+            }
+            EngineEvent::CloseRequested => {
+                if let Some(graphics_context) = self.graphics_context.take() {
+                    graphics_context.destroy();
+                }
+            }
+            _ => {}
+        }
     }
 }
 
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
-            return;
-        }
-
-        let attrs = WindowAttributes::default()
-            .with_title("Rotex Frontend Window")
-            .with_inner_size(LogicalSize::new(800.0, 600.0));
-        let window = event_loop.create_window(attrs).expect("window");
-        let display_handle = window.display_handle().expect("display").as_raw();
-        let window_handle = window.window_handle().expect("window").as_raw();
-        let mut instance_descriptor = InstanceDescriptor::default();
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            instance_descriptor.required_instance_extensions =
-                ash_window::enumerate_required_extensions(display_handle)
-                    .expect("required instance extensions")
-                    .iter()
-                    .map(|extension| unsafe { std::ffi::CStr::from_ptr(*extension) })
-                    .map(|extension| extension.to_string_lossy().into_owned())
-                    .collect();
-        }
-        let mut graphics_context = pollster::block_on(GraphicsContext::new(
-            instance_descriptor,
-            DeviceDescriptor::default(),
-        ))
-        .expect("frontend graphics_context");
-        graphics_context
-            .attach_surface(SurfaceDescriptor {
-                display_handle,
-                window_handle,
-                extent: window_extent(&window),
-            })
-            .expect("attach surface");
-        self.window = Some(window);
-        self.graphics_context = Some(graphics_context);
-    }
-
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
-        event: WindowEvent,
-    ) {
-        if let WindowEvent::CloseRequested = event {
-            event_loop.exit();
-        }
-    }
-}
-
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let event_loop = EventLoop::new()?;
-    event_loop.set_control_flow(ControlFlow::Poll);
-
-    let mut app = App::default();
-    event_loop.run_app(&mut app)?;
-
-    if let Some(graphics_context) = app.graphics_context.take() {
-        graphics_context.destroy();
-    }
+    let descriptor = WindowDescriptor {
+        title: "Rotex Frontend Window".to_string(),
+        width: 800,
+        height: 600,
+        ..Default::default()
+    };
+    let orchestrator = WindowOrchestrator::new(Box::new(WinitBackend));
+    orchestrator.run(descriptor, Box::new(App::default()))?;
     Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    eprintln!("window example is only available on native targets.");
 }
